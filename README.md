@@ -1,6 +1,7 @@
 # Ray Tracing Shapely
 
 A Python ray tracing library using Shapely for computational geometry operations.
+The project has started as a translation of a javascript library (see references). If you use this please give credits to the original authors ( see section Acknowledgments)
 
 ## Overview
 
