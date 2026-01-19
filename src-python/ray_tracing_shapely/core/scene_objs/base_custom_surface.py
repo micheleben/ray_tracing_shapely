@@ -19,10 +19,10 @@ from typing import List, Dict, Any, Optional
 
 # Handle both relative imports (when used as a module) and absolute imports (when run as script)
 if __name__ == "__main__":
-    from ray_optics_shapely.core.scene_objs.base_scene_obj import BaseSceneObj, SimulationReturn
-    from ray_optics_shapely.core import geometry
-    from ray_optics_shapely.core.equation import evaluate_latex
-    from ray_optics_shapely.core.constants import GREEN_WAVELENGTH
+    from ray_tracing_shapely.core.scene_objs.base_scene_obj import BaseSceneObj, SimulationReturn
+    from ray_tracing_shapely.core import geometry
+    from ray_tracing_shapely.core.equation import evaluate_latex
+    from ray_tracing_shapely.core.constants import GREEN_WAVELENGTH
 else:
     from .base_scene_obj import BaseSceneObj, SimulationReturn
     from .. import geometry

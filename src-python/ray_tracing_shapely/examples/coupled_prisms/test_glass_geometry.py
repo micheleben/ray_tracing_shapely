@@ -13,9 +13,9 @@ import os
 # Add the src_python directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from ray_optics_shapely.core.scene import Scene
-from ray_optics_shapely.core.scene_objs import Glass
-from ray_optics_shapely.analysis import analyze_scene_geometry
+from ray_tracing_shapely.core.scene import Scene
+from ray_tracing_shapely.core.scene_objs import Glass
+from ray_tracing_shapely.analysis import analyze_scene_geometry
 
 
 def test_coupled_prisms_geometry():

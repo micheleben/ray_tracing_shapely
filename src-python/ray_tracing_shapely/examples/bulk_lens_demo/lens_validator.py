@@ -4,15 +4,15 @@ import math
 import csv
 import json
 
-# Add parent directories to path to from ray_optics_shapely import core modules
+# Add parent directories to path to from ray_tracing_shapely import core modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from ray_optics_shapely.core.scene import Scene
-from ray_optics_shapely.core.scene_objs.light_source.point_source import PointSource
-from ray_optics_shapely.core.scene_objs.glass.spherical_lens import SphericalLens
-from ray_optics_shapely.core.scene_objs.blocker.blocker import Blocker
-from ray_optics_shapely.core.simulator import Simulator
-from ray_optics_shapely.core.svg_renderer import SVGRenderer  
+from ray_tracing_shapely.core.scene import Scene
+from ray_tracing_shapely.core.scene_objs.light_source.point_source import PointSource
+from ray_tracing_shapely.core.scene_objs.glass.spherical_lens import SphericalLens
+from ray_tracing_shapely.core.scene_objs.blocker.blocker import Blocker
+from ray_tracing_shapely.core.simulator import Simulator
+from ray_tracing_shapely.core.svg_renderer import SVGRenderer  
 def main():
     """Run the collimation demonstration.
     this is with a """

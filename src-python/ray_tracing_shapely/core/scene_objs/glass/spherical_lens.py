@@ -19,8 +19,8 @@ from typing import Dict, Any, Optional
 
 # Handle both relative imports (when used as a module) and absolute imports (when run as script)
 if __name__ == "__main__":
-    from ray_optics_shapely.core.scene_objs.glass.glass import Glass
-    from ray_optics_shapely.core import geometry
+    from ray_tracing_shapely.core.scene_objs.glass.glass import Glass
+    from ray_tracing_shapely.core import geometry
 else:
     from .glass import Glass
     from ... import geometry

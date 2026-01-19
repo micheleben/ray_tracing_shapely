@@ -563,5 +563,5 @@ if __name__ == "__main__":
 
     print("\nGlass Geometry Analysis tests completed!")
     print("\nTo test with actual Scene objects, use:")
-    print("  from ray_optics_shapely.core.analysis import analyze_scene_geometry")
+    print("  from ray_tracing_shapely.core.analysis import analyze_scene_geometry")
     print("  analysis = analyze_scene_geometry(scene)")

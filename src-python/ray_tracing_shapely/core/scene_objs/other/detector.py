@@ -18,9 +18,9 @@ import math
 from typing import Optional, Dict, Any, List
 # Handle both relative imports (when used as a module) and absolute imports (when run as script)
 if __name__ == "__main__":
-    from ray_optics_shapely.core.scene_objs.base_scene_obj import BaseSceneObj
-    from ray_optics_shapely.core.scene_objs.line_obj_mixin import LineObjMixin
-    from ray_optics_shapely.core import geometry
+    from ray_tracing_shapely.core.scene_objs.base_scene_obj import BaseSceneObj
+    from ray_tracing_shapely.core.scene_objs.line_obj_mixin import LineObjMixin
+    from ray_tracing_shapely.core import geometry
 else:
     from ..base_scene_obj import BaseSceneObj
     from ..line_obj_mixin import LineObjMixin
@@ -283,7 +283,7 @@ if __name__ == "__main__":
     # Add parent paths for imports when running as script
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-    from ray_optics_shapely.core.scene import Scene
+    from ray_tracing_shapely.core.scene import Scene
 
     print("Testing Detector class...\n")
 

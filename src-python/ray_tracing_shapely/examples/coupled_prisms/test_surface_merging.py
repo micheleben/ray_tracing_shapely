@@ -7,10 +7,10 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from ray_optics_shapely.core.scene import Scene
-from ray_optics_shapely.core.scene_objs.glass.glass import Glass
-from ray_optics_shapely.core.scene_objs.light_source.single_ray import SingleRay
-from ray_optics_shapely.core.simulator import Simulator
+from ray_tracing_shapely.core.scene import Scene
+from ray_tracing_shapely.core.scene_objs.glass.glass import Glass
+from ray_tracing_shapely.core.scene_objs.light_source.single_ray import SingleRay
+from ray_tracing_shapely.core.simulator import Simulator
 
 def test_coupled_prisms():
     """Test that coupled prisms with same n don't refract at interface."""

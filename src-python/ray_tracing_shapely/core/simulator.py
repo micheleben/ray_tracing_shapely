@@ -420,7 +420,7 @@ class Simulator:
         """
         # Import here to avoid circular imports
         if __name__ == "__main__":
-            from ray_optics_shapely.core.scene_objs.base_glass import BaseGlass
+            from ray_tracing_shapely.core.scene_objs.base_glass import BaseGlass
         else:
             from .scene_objs.base_glass import BaseGlass
         return isinstance(obj, BaseGlass)
@@ -894,9 +894,9 @@ if __name__ == "__main__":
         import sys
         import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-        from ray_optics_shapely.core.scene_objs.base_glass import BaseGlass
-        from ray_optics_shapely.core.scene_objs.base_scene_obj import BaseSceneObj
-        from ray_optics_shapely.core.scene_objs.blocker.blocker import Blocker
+        from ray_tracing_shapely.core.scene_objs.base_glass import BaseGlass
+        from ray_tracing_shapely.core.scene_objs.base_scene_obj import BaseSceneObj
+        from ray_tracing_shapely.core.scene_objs.blocker.blocker import Blocker
     else:
         from .scene_objs.base_glass import BaseGlass
         from .scene_objs.base_scene_obj import BaseSceneObj

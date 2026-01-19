@@ -19,9 +19,9 @@ from typing import Dict, Any, Optional, List, Union, Tuple, TYPE_CHECKING
 
 # Handle both relative imports (when used as a module) and absolute imports (when run as script)
 if __name__ == "__main__":
-    from ray_optics_shapely.core.scene_objs.base_glass import BaseGlass
-    from ray_optics_shapely.core.constants import MIN_RAY_SEGMENT_LENGTH, EDGE_DETECTION_THRESHOLD_SQUARED
-    from ray_optics_shapely.core import geometry
+    from ray_tracing_shapely.core.scene_objs.base_glass import BaseGlass
+    from ray_tracing_shapely.core.constants import MIN_RAY_SEGMENT_LENGTH, EDGE_DETECTION_THRESHOLD_SQUARED
+    from ray_tracing_shapely.core import geometry
 else:
     from ..base_glass import BaseGlass
     from ...constants import MIN_RAY_SEGMENT_LENGTH, EDGE_DETECTION_THRESHOLD_SQUARED

@@ -16,7 +16,7 @@ limitations under the License.
 
 # Handle both relative imports (when used as a module) and absolute imports (when run as script)
 if __name__ == "__main__":
-    from ray_optics_shapely.core.scene_objs.base_scene_obj import BaseSceneObj
+    from ray_tracing_shapely.core.scene_objs.base_scene_obj import BaseSceneObj
 else:
     from .base_scene_obj import BaseSceneObj
 
