@@ -191,10 +191,12 @@ class SVGRenderer:
 
     This class creates descriptive SVG output with metadata attributes
     that describe the simulation elements. The SVG is organized into
-    three layers (matching the JavaScript implementation):
+    four layers (similar to the JavaScript implementation which is 3 layers (no graphical annotations)):
     - objects: Optical elements (below rays)
+    - graphic annotations: (below rays) 
     - rays: Light rays
     - labels: Text annotations (above everything)
+
 
     The SVG includes data attributes on elements for post-processing
     and analysis.
@@ -254,8 +256,12 @@ class SVGRenderer:
         # Create layers as groups (bottom to top) with Y-flip transformation
         # This makes positive Y point upward (mathematical convention)
         self.layer_objects = self.dwg.add(self.dwg.g(id='objects', transform='scale(1, -1)'))
+        self.layer_graphic_symb = self.dwg.add(self.dwg.g(id='graphic_symb', transform='scale(1, -1)'))
         self.layer_rays = self.dwg.add(self.dwg.g(id='rays', transform='scale(1, -1)'))
         self.layer_labels = self.dwg.add(self.dwg.g(id='labels', transform='scale(1, -1)'))
+        
+
+        self.center_line_pattern = "20, 5, 5, 5" 
 
     def _normalize_coord(self, value):
         """
@@ -361,6 +367,65 @@ class SVGRenderer:
                 id=ray_id
             )
             self.layer_rays.add(line)
+    
+    def draw_centerline_segment(self,p1:dict[str,float],p2:dict[str,float], 
+                                id_str:str=None, color:str='gray', 
+                                opacity:float=1.0, stroke_width:float=1.5,
+                                extend_to_edge:bool=False) -> bool:
+        """
+        Draw a center line segment (this is a graphical annotation).
+
+        Args:
+            
+            color (str): CSS color string (default: 'red')
+            opacity (float): Opacity 0.0-1.0 (default: 1.0)
+            stroke_width (float): Line width in pixels (default: 1.5)
+            extend_to_edge (bool): If True, extend ray to viewport edge (default: False)
+            draw_gap_rays (bool): If True, draw gap rays (default: False)
+
+        """
+        
+        # Skip rays with invalid coordinates
+        if (math.isnan(p1['x']) or math.isnan(p1['y']) or
+            math.isnan(p2['x']) or math.isnan(p2['y']) or
+            math.isinf(p1['x']) or math.isinf(p1['y']) or
+            math.isinf(p2['x']) or math.isinf(p2['y'])):
+            return False
+
+        if extend_to_edge:
+            # Extend the ray to the edge of the viewbox
+            p2 = self._extend_to_edge(p1, p2)
+
+        # Clip the ray to the viewbox boundaries
+        # This prevents drawing geometry way outside the visible area
+        p1_clipped, p2_clipped = self._clip_to_viewbox(p1, p2)
+
+        if p1_clipped is None or p2_clipped is None:
+            # Ray is completely outside the viewbox
+            return False
+
+        # Normalize coordinates to handle edge cases like -0.0
+        p1 = self._normalize_point(p1_clipped)
+        p2 = self._normalize_point(p2_clipped)
+
+        id:str = "CL"
+        if id_str is not None:
+            id = id_str    
+
+        else:
+            # Draw simple line
+            line = self.dwg.line(
+                start=(p1['x'], p1['y']),
+                end=(p2['x'], p2['y']),
+                stroke=color,
+                stroke_width=stroke_width,
+                stroke_opacity=opacity,
+                stroke_dasharray=self.center_line_pattern,
+                id=id
+            )
+            self.layer_graphic_symb.add(line)
+        
+        return True    
 
     def _draw_ray_with_arrow(self, p1, p2, color, opacity, stroke_width,
                              arrow_size, arrow_position, ray_id=None):
