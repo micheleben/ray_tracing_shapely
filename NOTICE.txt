@@ -1,0 +1,2 @@
+This is a Python translation of the original JavaScript code from https://github.com/ricktu288/ray-optics. 
+Translated by the author of ray-tracing-shapely and contributors in 2026.

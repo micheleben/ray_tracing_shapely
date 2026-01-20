@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "The Ray Optics Simulation authors and contributors"}
+    {name = "ray-tracing-shapely authors and contributors", email = "micheleben@gmail.com"}
 ]
 keywords = ["ray-tracing", "optics", "simulation", "shapely", "physics"]
 classifiers = [
@@ -43,9 +43,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USERNAME/ray_tracing_shapely"
-Repository = "https://github.com/YOUR_USERNAME/ray_tracing_shapely"
-Documentation = "https://github.com/YOUR_USERNAME/ray_tracing_shapely#readme"
+Homepage = "https://github.com/micheleben/ray_tracing_shapely"
+Repository = "https://github.com/micheleben/ray_tracing_shapely"
+Documentation = "https://github.com/micheleben/ray_tracing_shapely#readme"
 
 [tool.setuptools]
 package-dir = {"" = "src-python"}

@@ -1,7 +1,8 @@
 """
 Other scene objects (detectors, etc.)
 
-Copyright 2024 The Ray Optics Simulation authors and contributors
+Original work Copyright 2024 The Ray Optics Simulation authors and contributors
+Python translation Copyright 2026 ray-tracing-shapely authors and contributors
 Licensed under the Apache License, Version 2.0
 """
 

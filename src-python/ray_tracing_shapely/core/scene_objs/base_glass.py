@@ -1,5 +1,6 @@
 """
-Copyright 2024 The Ray Optics Simulation authors and contributors
+Original work Copyright 2024 The Ray Optics Simulation authors and contributors
+Python translation Copyright 2026 ray-tracing-shapely authors and contributors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

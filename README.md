@@ -1,7 +1,11 @@
 # Ray Tracing Shapely
 
 A Python ray tracing library using Shapely for computational geometry operations.
-The project has started as a translation of a javascript library (see references). If you use this please give credits to the original authors ( see section Acknowledgments)
+
+The project has started as a translation of the original [Ray Optics Simulation](https://github.com/ricktu288/ray-optics) JavaScript project. Original work copyright 2024 The Ray Optics Simulation authors 
+and contributors.
+
+If you use this please give credits to the original authors ( see section Acknowledgments)
 
 ## Overview
 
@@ -11,7 +15,7 @@ This library provides a Python implementation for 2D ray tracing simulations, in
 - **Optical elements** - Glass objects, ideal lenses, spherical lenses, blockers, detectors
 - **Light sources** - Point sources, beams, single rays, angle sources
 - **Analysis utilities** - Geometric analysis of glass interfaces and boundaries (Python-specific)
-- **Visualization** - SVG rendering of ray diagrams
+- **Visualization** - SVG rendering of ray diagrams (Python-specific)
 
 ## Installation
 
@@ -22,7 +26,7 @@ pip install ray-tracing-shapely
 Or install from source:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ray_tracing_shapely.git
+git clone https://github.com/micheleben/ray_tracing_shapely.git
 cd ray_tracing_shapely
 pip install -e .
 ```
