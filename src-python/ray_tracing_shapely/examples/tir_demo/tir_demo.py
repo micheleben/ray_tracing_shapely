@@ -101,5 +101,164 @@ def tir_demo():
     renderer.save(output_file)
     print(f"\nSaved to: {output_file}")
 
+    # =========================================================================
+    # Demonstrate edge labeling with cardinal directions (Python-specific)
+    # =========================================================================
+    print("\n--- Edge Labeling Visualization ---")
+
+    # Apply cardinal labels to the prism
+    prism.auto_label_cardinal()
+    print("Applied cardinal labels to prism:")
+    for i in range(prism._get_edge_count()):
+        label = prism.get_edge_label(i)
+        print(f"  Edge {i}: {label[0]} ({label[1]})")
+
+    # Create a new renderer with edge labels
+    renderer_labeled = SVGRenderer(width=800, height=600, viewbox=(0, 50, 300, 200))
+    renderer_labeled.draw_line_segment(prism.path[0], prism.path[1], color='blue', stroke_width=2)
+    renderer_labeled.draw_line_segment(prism.path[1], prism.path[2], color='blue', stroke_width=2)
+    renderer_labeled.draw_line_segment(prism.path[2], prism.path[0], color='blue', stroke_width=2)
+
+    for seg in segments:
+        renderer_labeled.draw_ray_segment(seg, color='red', opacity=0.8, stroke_width=1.5, draw_gap_rays=True)
+
+    # Draw the edge labels (using larger font for visibility)
+    renderer_labeled.draw_glass_edge_labels(prism, color='darkgreen', font_size='16px', offset_factor=0.25)
+
+    output_file_labeled = output_dir + '/prism_tir_labeled.svg'
+    renderer_labeled.save(output_file_labeled)
+    print(f"Saved labeled version to: {output_file_labeled}")
+
+
+def edge_labeling_demo():
+    """
+    Demonstrate the edge labeling feature (Python-specific).
+
+    This feature allows labeling individual edges of glass objects with
+    short labels and long names for identification and tracking.
+    """
+    print("\n" + "="*60)
+    print("Edge Labeling Demo (Python-specific feature)")
+    print("="*60)
+
+    scene = Scene()
+
+    # Create a square glass for simple testing
+    print("\n--- Test 1: Square Glass with Default Numeric Labels ---")
+    square = Glass(scene)
+    square.path = [
+        {'x': 0, 'y': 0, 'arc': False},
+        {'x': 100, 'y': 0, 'arc': False},
+        {'x': 100, 'y': 100, 'arc': False},
+        {'x': 0, 'y': 100, 'arc': False}
+    ]
+    square.not_done = False
+    square.refIndex = 1.5
+
+    # Default labels are numeric
+    print(f"Edge count: {square._get_edge_count()}")
+    print("Default numeric labels:")
+    for i in range(square._get_edge_count()):
+        label = square.get_edge_label(i)
+        print(f"  Edge {i}: short='{label[0]}', long='{label[1]}'")
+
+    # Test manual labeling
+    print("\n--- Test 2: Manual Edge Labeling ---")
+    square.label_edge(0, "bottom", "Bottom Edge")
+    square.label_edge(1, "right", "Right Edge")
+    square.label_edge(2, "top", "Top Edge")
+    square.label_edge(3, "left", "Left Edge")
+
+    print("After manual labeling:")
+    for i in range(square._get_edge_count()):
+        short = square.get_edge_short_label(i)
+        long = square.get_edge_long_name(i)
+        print(f"  Edge {i}: short='{short}', long='{long}'")
+
+    # Test find methods
+    print("\n--- Test 3: Finding Edges by Label ---")
+    idx = square.find_edge_by_short_label("top")
+    print(f"find_edge_by_short_label('top') = {idx}")
+
+    idx = square.find_edge_by_long_name("Left Edge")
+    print(f"find_edge_by_long_name('Left Edge') = {idx}")
+
+    idx = square.find_edge_by_short_label("nonexistent")
+    print(f"find_edge_by_short_label('nonexistent') = {idx}")
+
+    # Test cardinal auto-labeling on square
+    print("\n--- Test 4: Cardinal Auto-Labeling (Square) ---")
+    square2 = Glass(scene)
+    square2.path = [
+        {'x': 0, 'y': 0, 'arc': False},      # bottom-left
+        {'x': 100, 'y': 0, 'arc': False},    # bottom-right
+        {'x': 100, 'y': 100, 'arc': False},  # top-right
+        {'x': 0, 'y': 100, 'arc': False}     # top-left
+    ]
+    square2.not_done = False
+
+    print(f"Centroid: {square2._get_centroid()}")
+    print("Edge midpoints:")
+    for i in range(4):
+        mid = square2._get_edge_midpoint(i)
+        print(f"  Edge {i}: midpoint=({mid[0]:.1f}, {mid[1]:.1f})")
+
+    square2.auto_label_cardinal()
+    print("\nAfter auto_label_cardinal():")
+    for i in range(square2._get_edge_count()):
+        label = square2.get_edge_label(i)
+        print(f"  Edge {i}: short='{label[0]}', long='{label[1]}'")
+
+    # Test cardinal auto-labeling on triangle (the TIR prism)
+    print("\n--- Test 5: Cardinal Auto-Labeling (Equilateral Triangle) ---")
+    triangle = Glass(scene)
+    triangle.path = [
+        {'x': 100, 'y': 200, 'arc': False},   # bottom-left
+        {'x': 200, 'y': 200, 'arc': False},   # bottom-right
+        {'x': 150, 'y': 113.4, 'arc': False}  # top
+    ]
+    triangle.not_done = False
+
+    print(f"Centroid: {triangle._get_centroid()}")
+    triangle.auto_label_cardinal()
+    print("After auto_label_cardinal():")
+    for i in range(triangle._get_edge_count()):
+        label = triangle.get_edge_label(i)
+        mid = triangle._get_edge_midpoint(i)
+        print(f"  Edge {i}: short='{label[0]}', long='{label[1]}' (midpoint: {mid[0]:.1f}, {mid[1]:.1f})")
+
+    # Test hexagon (6 edges -> 8 directions)
+    print("\n--- Test 6: Cardinal Auto-Labeling (Hexagon - 6 edges) ---")
+    import math
+    hexagon = Glass(scene)
+    # Create regular hexagon centered at (100, 100) with radius 50
+    hexagon.path = []
+    for i in range(6):
+        angle = i * math.pi / 3  # 60 degrees apart
+        x = 100 + 50 * math.cos(angle)
+        y = 100 + 50 * math.sin(angle)
+        hexagon.path.append({'x': x, 'y': y, 'arc': False})
+    hexagon.not_done = False
+
+    hexagon.auto_label_cardinal()
+    print("After auto_label_cardinal() (uses 8-direction system):")
+    for i in range(hexagon._get_edge_count()):
+        label = hexagon.get_edge_label(i)
+        print(f"  Edge {i}: short='{label[0]}', long='{label[1]}'")
+
+    # Test error handling
+    print("\n--- Test 7: Error Handling ---")
+    try:
+        square.label_edge(10, "bad", "Bad Edge")
+        print("ERROR: Should have raised IndexError")
+    except IndexError as e:
+        print(f"Correctly raised IndexError: {e}")
+
+    print("\n" + "="*60)
+    print("Edge Labeling Demo Complete!")
+    print("="*60)
+
+
 if __name__ == '__main__':
     tir_demo()
+    edge_labeling_demo()

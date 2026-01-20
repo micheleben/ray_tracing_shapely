@@ -260,6 +260,40 @@ class Scene:
         self.error = None
         self.warning = None
 
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: Bulk Edge Labeling
+    # =========================================================================
+    # Convenience method to auto-label all glass objects in the scene.
+    # =========================================================================
+
+    def auto_label_all_glass_cardinal(self):
+        """
+        Automatically label all glass objects with cardinal directions.
+
+        [PYTHON-SPECIFIC FEATURE]
+
+        Iterates through all objects in the scene and calls auto_label_cardinal()
+        on any object that has this method (i.e., glass objects inheriting from
+        BaseGlass).
+
+        Returns:
+            int: The number of glass objects that were labeled.
+
+        Example:
+            scene = Scene()
+            scene.add_object(prism1)
+            scene.add_object(prism2)
+            scene.add_object(lens)  # Not a glass, will be skipped
+            count = scene.auto_label_all_glass_cardinal()
+            print(f"Labeled {count} glass objects")
+        """
+        count = 0
+        for obj in self.objs:
+            if hasattr(obj, 'auto_label_cardinal') and callable(obj.auto_label_cardinal):
+                obj.auto_label_cardinal()
+                count += 1
+        return count
+
 
 # Example usage and testing
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ limitations under the License.
 """
 
 import math
-from typing import List, Optional, Dict, Any, Union, TYPE_CHECKING
+from typing import List, Optional, Dict, Any, Union, Tuple, TYPE_CHECKING
 
 # Handle both relative imports (when used as a module) and absolute imports (when run as script)
 if __name__ == "__main__":
@@ -63,6 +63,287 @@ class BaseGlass(BaseSceneObj):
     """
 
     merges_with_glass = True
+
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: Edge Labeling
+    # =========================================================================
+    # Allows labeling individual edges of glass objects with short and long
+    # labels for identification and tracking. Supports both manual labeling
+    # and automatic cardinal direction labeling based on edge orientation.
+    # =========================================================================
+
+    def _get_edge_count(self) -> int:
+        """
+        Get the number of edges in this glass object.
+
+        Returns:
+            Number of edges (based on path length). Subclasses should override
+            this if edges are determined differently.
+        """
+        if hasattr(self, 'path') and self.path:
+            return len(self.path)
+        return 0
+
+    def _initialize_edge_labels(self) -> None:
+        """
+        Initialize edge_labels with default numeric labels.
+
+        Creates labels {0: ("0", "0"), 1: ("1", "1"), ...} for all edges.
+        Called automatically when edge_labels is first accessed.
+        """
+        edge_count = self._get_edge_count()
+        self._edge_labels: Dict[int, Tuple[str, str]] = {
+            i: (str(i), str(i)) for i in range(edge_count)
+        }
+
+    @property
+    def edge_labels(self) -> Dict[int, Tuple[str, str]]:
+        """
+        Get the edge labels dictionary.
+
+        Returns:
+            Dict mapping edge index to (short_label, long_name) tuple.
+            Auto-initialized with numeric labels on first access.
+        """
+        if not hasattr(self, '_edge_labels') or self._edge_labels is None:
+            self._initialize_edge_labels()
+        return self._edge_labels
+
+    @edge_labels.setter
+    def edge_labels(self, value: Dict[int, Tuple[str, str]]) -> None:
+        """Set the edge labels dictionary."""
+        self._edge_labels = value
+
+    def label_edge(self, edge_index: int, short_label: str, long_name: str) -> None:
+        """
+        Set labels for a specific edge.
+
+        Args:
+            edge_index: The index of the edge to label.
+            short_label: Short label for the edge (e.g., "N", "E").
+            long_name: Long descriptive name (e.g., "North Edge").
+
+        Raises:
+            IndexError: If edge_index is out of range.
+        """
+        edge_count = self._get_edge_count()
+        if edge_index < 0 or edge_index >= edge_count:
+            raise IndexError(f"Edge index {edge_index} out of range [0, {edge_count})")
+        self.edge_labels[edge_index] = (short_label, long_name)
+
+    def get_edge_label(self, edge_index: int) -> Optional[Tuple[str, str]]:
+        """
+        Get both labels for an edge.
+
+        Args:
+            edge_index: The index of the edge.
+
+        Returns:
+            Tuple of (short_label, long_name), or None if edge doesn't exist.
+        """
+        return self.edge_labels.get(edge_index)
+
+    def get_edge_short_label(self, edge_index: int) -> Optional[str]:
+        """
+        Get the short label for an edge.
+
+        Args:
+            edge_index: The index of the edge.
+
+        Returns:
+            The short label, or None if edge doesn't exist.
+        """
+        label = self.edge_labels.get(edge_index)
+        return label[0] if label else None
+
+    def get_edge_long_name(self, edge_index: int) -> Optional[str]:
+        """
+        Get the long name for an edge.
+
+        Args:
+            edge_index: The index of the edge.
+
+        Returns:
+            The long name, or None if edge doesn't exist.
+        """
+        label = self.edge_labels.get(edge_index)
+        return label[1] if label else None
+
+    def find_edge_by_short_label(self, short_label: str) -> Optional[int]:
+        """
+        Find an edge index by its short label.
+
+        Args:
+            short_label: The short label to search for.
+
+        Returns:
+            The edge index, or None if not found.
+        """
+        for idx, (short, _) in self.edge_labels.items():
+            if short == short_label:
+                return idx
+        return None
+
+    def find_edge_by_long_name(self, long_name: str) -> Optional[int]:
+        """
+        Find an edge index by its long name.
+
+        Args:
+            long_name: The long name to search for.
+
+        Returns:
+            The edge index, or None if not found.
+        """
+        for idx, (_, long) in self.edge_labels.items():
+            if long == long_name:
+                return idx
+        return None
+
+    def _get_centroid(self) -> Tuple[float, float]:
+        """
+        Calculate the centroid of the glass object.
+
+        Returns:
+            Tuple of (x, y) coordinates of the centroid.
+        """
+        if not hasattr(self, 'path') or not self.path:
+            return (0.0, 0.0)
+
+        sum_x = sum(p['x'] for p in self.path)
+        sum_y = sum(p['y'] for p in self.path)
+        n = len(self.path)
+        return (sum_x / n, sum_y / n)
+
+    def _get_edge_midpoint(self, edge_index: int) -> Tuple[float, float]:
+        """
+        Calculate the midpoint of an edge.
+
+        Args:
+            edge_index: The index of the edge.
+
+        Returns:
+            Tuple of (x, y) coordinates of the midpoint.
+        """
+        if not hasattr(self, 'path') or not self.path:
+            return (0.0, 0.0)
+
+        p1 = self.path[edge_index]
+        p2 = self.path[(edge_index + 1) % len(self.path)]
+        return ((p1['x'] + p2['x']) / 2, (p1['y'] + p2['y']) / 2)
+
+    def auto_label_cardinal(self) -> None:
+        """
+        Automatically label edges with cardinal directions based on their
+        position relative to the centroid.
+
+        The algorithm:
+        1. Calculate the centroid of the glass object
+        2. Determine quadrant count based on edge count:
+           - ≤4 edges: 4 quadrants (N, S, E, W)
+           - 5-8 edges: 8 quadrants (N, NE, E, SE, S, SW, W, NW)
+           - 9-12 edges: 12 quadrants (adds NNE, ENE, ESE, SSE, SSW, WSW, WNW, NNW)
+           - 13+ edges: 16 quadrants
+        3. For each edge, calculate angle from centroid to edge midpoint
+        4. Assign to nearest cardinal direction
+
+        Coordinate system:
+        - North (N): positive y (top)
+        - South (S): negative y (bottom)
+        - East (E): positive x (right)
+        - West (W): negative x (left)
+        """
+        edge_count = self._get_edge_count()
+        if edge_count == 0:
+            return
+
+        # Define direction systems based on edge count
+        directions_4 = [
+            ("E", "East Edge"),
+            ("N", "North Edge"),
+            ("W", "West Edge"),
+            ("S", "South Edge"),
+        ]
+
+        directions_8 = [
+            ("E", "East Edge"),
+            ("NE", "North East Edge"),
+            ("N", "North Edge"),
+            ("NW", "North West Edge"),
+            ("W", "West Edge"),
+            ("SW", "South West Edge"),
+            ("S", "South Edge"),
+            ("SE", "South East Edge"),
+        ]
+
+        directions_12 = [
+            ("E", "East Edge"),
+            ("ENE", "East North East Edge"),
+            ("NNE", "North North East Edge"),
+            ("N", "North Edge"),
+            ("NNW", "North North West Edge"),
+            ("WNW", "West North West Edge"),
+            ("W", "West Edge"),
+            ("WSW", "West South West Edge"),
+            ("SSW", "South South West Edge"),
+            ("S", "South Edge"),
+            ("SSE", "South South East Edge"),
+            ("ESE", "East South East Edge"),
+        ]
+
+        directions_16 = [
+            ("E", "East Edge"),
+            ("ENE", "East North East Edge"),
+            ("NE", "North East Edge"),
+            ("NNE", "North North East Edge"),
+            ("N", "North Edge"),
+            ("NNW", "North North West Edge"),
+            ("NW", "North West Edge"),
+            ("WNW", "West North West Edge"),
+            ("W", "West Edge"),
+            ("WSW", "West South West Edge"),
+            ("SW", "South West Edge"),
+            ("SSW", "South South West Edge"),
+            ("S", "South Edge"),
+            ("SSE", "South South East Edge"),
+            ("SE", "South East Edge"),
+            ("ESE", "East South East Edge"),
+        ]
+
+        # Select direction system based on edge count
+        if edge_count <= 4:
+            directions = directions_4
+        elif edge_count <= 8:
+            directions = directions_8
+        elif edge_count <= 12:
+            directions = directions_12
+        else:
+            directions = directions_16
+
+        num_directions = len(directions)
+        angle_per_direction = 2 * math.pi / num_directions
+
+        centroid = self._get_centroid()
+
+        # Label each edge
+        for i in range(edge_count):
+            midpoint = self._get_edge_midpoint(i)
+
+            # Calculate angle from centroid to midpoint
+            # atan2 returns angle in range [-π, π], with 0 pointing East
+            dx = midpoint[0] - centroid[0]
+            dy = midpoint[1] - centroid[1]
+            angle = math.atan2(dy, dx)
+
+            # Convert to [0, 2π) range
+            if angle < 0:
+                angle += 2 * math.pi
+
+            # Find nearest direction
+            # Add half the angle per direction for proper rounding to nearest
+            direction_index = int((angle + angle_per_direction / 2) / angle_per_direction) % num_directions
+
+            short_label, long_name = directions[direction_index]
+            self.edge_labels[i] = (short_label, long_name)
 
     def populate_obj_bar(self, obj_bar: Any) -> None:
         """
@@ -550,6 +831,13 @@ if __name__ == "__main__":
             self.simulate_colors = False
             self.color_mode = 'default'
             self.length_scale = 1.0
+            self._min_brightness_exp = None
+
+        def get_min_brightness_threshold(self):
+            """Return brightness threshold for ray truncation."""
+            if self._min_brightness_exp is not None:
+                return 10 ** self._min_brightness_exp
+            return 0.01 if self.color_mode == 'default' else 1e-6
 
     # Mock ray for testing
     class MockRay:

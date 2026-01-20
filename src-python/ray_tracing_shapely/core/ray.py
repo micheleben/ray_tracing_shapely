@@ -34,7 +34,7 @@ class Ray:
         wavelength (float or None): Wavelength in nm, or None for white light
         gap (bool): If True, this ray segment is not drawn (gap in ray path)
         is_new (bool): If True, this ray has not been processed yet
-        body_merging_obj (object or None): Object for surface merging (Phase 2.5)
+        body_merging_obj (object or None): Object for surface merging 
 
     TIR Tracking Attributes (PYTHON-SPECIFIC FEATURE):
         is_tir_result (bool): True if this segment was produced BY a TIR event

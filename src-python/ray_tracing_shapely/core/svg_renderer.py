@@ -852,6 +852,97 @@ class SVGRenderer:
             )
             self.layer_labels.add(text)
 
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: Edge Label Rendering
+    # =========================================================================
+    # Renders edge labels for glass objects near the center of each edge.
+    # Works with the edge labeling feature in BaseGlass.
+    # =========================================================================
+
+    def draw_glass_edge_labels(self, glass, color='darkblue', font_size='6px',
+                                offset_factor=0.15):
+        """
+        Draw edge labels for a glass object.
+
+        Renders the short label for each edge near the center of that edge,
+        positioned slightly outward from the glass centroid for readability.
+
+        Args:
+            glass: A Glass object with edge_labels property and path attribute.
+            color (str): Text color for labels (default: 'darkblue')
+            font_size (str): CSS font size (default: '10px')
+            offset_factor (float): How far to offset labels from edge midpoint
+                toward the outside of the glass, as a fraction of the distance
+                from centroid to edge midpoint (default: 0.15)
+
+        Note:
+            This is a Python-specific feature for visualizing edge labels.
+            The glass object must have:
+            - path: List of points defining the glass boundary
+            - edge_labels: Dict mapping edge index to (short_label, long_name)
+        """
+        if not hasattr(glass, 'path') or not glass.path:
+            return
+
+        if not hasattr(glass, 'edge_labels'):
+            return
+
+        path = glass.path
+        n = len(path)
+
+        # Calculate centroid for offset direction
+        centroid = glass._get_centroid()
+
+        for edge_index in range(n):
+            label_tuple = glass.get_edge_label(edge_index)
+            if not label_tuple:
+                continue
+
+            short_label = label_tuple[0]
+
+            # Calculate edge midpoint
+            midpoint = glass._get_edge_midpoint(edge_index)
+
+            # Calculate offset direction (away from centroid)
+            dx = midpoint[0] - centroid[0]
+            dy = midpoint[1] - centroid[1]
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist > 1e-6:
+                # Normalize and apply offset
+                offset_x = (dx / dist) * dist * offset_factor
+                offset_y = (dy / dist) * dist * offset_factor
+            else:
+                offset_x = 0
+                offset_y = 0
+
+            # Position label at midpoint with offset
+            label_x = self._normalize_coord(midpoint[0] + offset_x)
+            label_y = self._normalize_coord(midpoint[1] + offset_y)
+
+            # Create text element
+            # Note: The layer has a Y-flip transform (scale(1, -1)), so the text
+            # would appear upside down. We add transform='scale(1, -1)' to the
+            # text element itself to flip it back to readable orientation.
+            # This means we need to negate the Y coordinate for proper positioning.
+            # We also add a small vertical offset to approximately center the
+            # text vertically (since dominant-baseline is not supported in SVG
+            # tiny profile).
+            # Parse font size to get numeric value for vertical offset
+            font_size_num = float(font_size.replace('px', '').replace('pt', ''))
+            vertical_offset = font_size_num * 0.35  # Approximate vertical centering
+
+            text = self.dwg.text(
+                short_label,
+                insert=(label_x, -label_y + vertical_offset),
+                fill=color,
+                font_size=font_size,
+                font_family='sans-serif',
+                text_anchor='middle',
+                transform='scale(1, -1)'  # Flip text back to be readable
+            )
+            self.layer_labels.add(text)
+
     def _calculate_arc_center(self, pt1, pt2, pt3):
         """
         Calculate center of circle passing through three points.
