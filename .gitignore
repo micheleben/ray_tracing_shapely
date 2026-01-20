@@ -140,6 +140,7 @@ cython_debug/
 # IDE settings
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~
