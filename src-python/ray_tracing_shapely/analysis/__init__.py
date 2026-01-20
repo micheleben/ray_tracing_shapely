@@ -30,6 +30,7 @@ operations that are not available in the JavaScript version.
 ===============================================================================
 """
 
+
 from .glass_geometry import (
     GlassInterface,
     GlassBoundary,
@@ -37,11 +38,22 @@ from .glass_geometry import (
     analyze_scene_geometry,
     glass_to_polygon,
 )
+from .saving import (
+    save_rays_csv,
+    filter_tir_rays,
+    get_ray_statistics,
+)
 
 __all__ = [
+    # Glass geometry analysis
     'GlassInterface',
     'GlassBoundary',
     'SceneGeometryAnalysis',
     'analyze_scene_geometry',
     'glass_to_polygon',
+    # Ray data export and statistics
+    'save_rays_csv',
+    'filter_tir_rays',
+    'get_ray_statistics',
 ]
+
