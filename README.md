@@ -19,8 +19,10 @@ This library provides a Python implementation for 2D ray tracing simulations, in
 
 ## Installation
 
+Library is not in its complete version (part of the original work is not translated). Contributions are welcomed!
+
 ```bash
-pip install ray-tracing-shapely
+pip install -i https://test.pypi.org/simple/ ray-tracing-shapely==0.1.0
 ```
 
 Or install from source:
