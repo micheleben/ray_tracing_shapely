@@ -37,6 +37,11 @@ from .glass_geometry import (
     SceneGeometryAnalysis,
     analyze_scene_geometry,
     glass_to_polygon,
+    # Edge description (Python-specific)
+    EdgeType,
+    EdgeDescription,
+    get_edge_descriptions,
+    describe_edges,
 )
 from .saving import (
     save_rays_csv,
@@ -51,6 +56,11 @@ __all__ = [
     'SceneGeometryAnalysis',
     'analyze_scene_geometry',
     'glass_to_polygon',
+    # Edge description (Python-specific)
+    'EdgeType',
+    'EdgeDescription',
+    'get_edge_descriptions',
+    'describe_edges',
     # Ray data export and statistics
     'save_rays_csv',
     'filter_tir_rays',

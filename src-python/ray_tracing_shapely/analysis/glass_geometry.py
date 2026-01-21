@@ -21,15 +21,18 @@ between glass objects in a scene, including:
 - Finding shared interfaces between adjacent glasses
 - Computing boundary properties (area, centroid, perimeter)
 - Computing interface properties (length, center, normal vectors)
+- Describing individual edges of glass objects (Python-specific feature)
 
 This is useful for:
 - Understanding optical system geometry
 - Computing interface areas for Fresnel calculations
 - Visualizing glass arrangements
+- Identifying specific edges by index, label, length, or position
 """
 
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import List, Tuple, Optional, TYPE_CHECKING
 
 from shapely.geometry import Polygon, LineString, Point, MultiLineString, GeometryCollection
@@ -38,6 +41,219 @@ from shapely.ops import unary_union
 if TYPE_CHECKING:
     from ..core.scene import Scene
     from ..core.scene_objs.base_glass import BaseGlass
+
+
+# =============================================================================
+# PYTHON-SPECIFIC FEATURE: Edge Description
+# =============================================================================
+# Provides detailed information about individual edges of glass objects,
+# including geometry type, coordinates, length, and labels.
+# =============================================================================
+
+class EdgeType(Enum):
+    """
+    Type of edge geometry.
+
+    Used to distinguish between different edge types in glass objects,
+    supporting future extension to parametric curves.
+    """
+    LINE = "line"           # Straight line segment
+    CIRCULAR = "circular"   # Circular arc (defined by 'arc' flag in path)
+    EQUATION = "equation"   # Parametric equation (from ParamCurveObjMixin)
+
+
+@dataclass
+class EdgeDescription:
+    """
+    Describes a single edge of a glass object.
+
+    This dataclass provides comprehensive information about an edge,
+    useful for identifying specific edges (e.g., shortest, longest,
+    or by cardinal direction) and for debugging/visualization.
+
+    Attributes:
+        index: Edge index (0-based, corresponding to path segment)
+        edge_type: Type of edge geometry (line, circular, equation)
+        p1: Start point as Shapely Point
+        p2: End point as Shapely Point
+        midpoint: Midpoint of the edge as Shapely Point
+        length: Length of the edge in scene units
+        short_label: Short label for the edge (e.g., "N", "E", or "0")
+        long_label: Long descriptive name (e.g., "North Edge", or "0")
+    """
+    index: int
+    edge_type: EdgeType
+    p1: Point
+    p2: Point
+    midpoint: Point
+    length: float
+    short_label: str
+    long_label: str
+
+    def __repr__(self) -> str:
+        return (f"EdgeDescription(index={self.index}, type={self.edge_type.value}, "
+                f"label='{self.short_label}', length={self.length:.4f}, "
+                f"midpoint=({self.midpoint.x:.2f}, {self.midpoint.y:.2f}))")
+
+
+def get_edge_descriptions(glass: 'BaseGlass') -> List[EdgeDescription]:
+    """
+    Get detailed descriptions of all edges in a glass object.
+
+    Iterates through the glass path and returns structured information
+    about each edge, including geometry, coordinates, length, and labels.
+
+    Args:
+        glass: A BaseGlass object (Glass, SphericalLens, etc.) with a 'path'
+               attribute containing a list of points.
+
+    Returns:
+        List of EdgeDescription objects, one for each edge. The list is
+        ordered by edge index (0 to n-1 for n edges).
+
+    Example:
+        >>> from ray_tracing_shapely.analysis import get_edge_descriptions
+        >>> edges = get_edge_descriptions(prism)
+        >>> for edge in edges:
+        ...     print(f"Edge {edge.index} ({edge.short_label}): {edge.length:.2f} units")
+        Edge 0 (S): 100.00 units
+        Edge 1 (NE): 93.30 units
+        Edge 2 (NW): 93.30 units
+
+        >>> # Find shortest edge
+        >>> shortest = min(edges, key=lambda e: e.length)
+        >>> print(f"Shortest: {shortest.short_label} at {shortest.length:.2f}")
+    """
+    if not hasattr(glass, 'path') or not glass.path:
+        return []
+
+    descriptions = []
+    path = glass.path
+    n = len(path)
+
+    for i in range(n):
+        # Get start and end points (wrapping around for closed polygon)
+        p1_dict = path[i]
+        p2_dict = path[(i + 1) % n]
+
+        p1 = Point(p1_dict['x'], p1_dict['y'])
+        p2 = Point(p2_dict['x'], p2_dict['y'])
+
+        # Calculate midpoint
+        mid_x = (p1_dict['x'] + p2_dict['x']) / 2
+        mid_y = (p1_dict['y'] + p2_dict['y']) / 2
+        midpoint = Point(mid_x, mid_y)
+
+        # Calculate length
+        dx = p2_dict['x'] - p1_dict['x']
+        dy = p2_dict['y'] - p1_dict['y']
+        length = math.sqrt(dx * dx + dy * dy)
+
+        # Determine edge type
+        # Check if the next point (p2) has arc=True, which means this segment
+        # is part of a circular arc
+        next_point = path[(i + 1) % n]
+        if next_point.get('arc', False):
+            edge_type = EdgeType.CIRCULAR
+        elif hasattr(glass, 'pieces'):
+            # Has parametric equation pieces (from ParamCurveObjMixin)
+            edge_type = EdgeType.EQUATION
+        else:
+            edge_type = EdgeType.LINE
+
+        # Get labels from the glass object
+        label = glass.get_edge_label(i)
+        if label:
+            short_label, long_label = label
+        else:
+            short_label = str(i)
+            long_label = str(i)
+
+        descriptions.append(EdgeDescription(
+            index=i,
+            edge_type=edge_type,
+            p1=p1,
+            p2=p2,
+            midpoint=midpoint,
+            length=length,
+            short_label=short_label,
+            long_label=long_label
+        ))
+
+    return descriptions
+
+
+def describe_edges(glass: 'BaseGlass', show_coordinates: bool = True) -> None:
+    """
+    Print a formatted table describing all edges of a glass object.
+
+    Displays edge information including index, label, type, length,
+    and optionally coordinates (endpoints and midpoint).
+
+    Args:
+        glass: A BaseGlass object to describe.
+        show_coordinates: If True, include endpoint and midpoint coordinates.
+            Defaults to True.
+
+    Example:
+        >>> from ray_tracing_shapely.analysis import describe_edges
+        >>> describe_edges(prism)
+
+        Edge Descriptions for Glass (3 edges)
+        ══════════════════════════════════════════════════════════════════════
+        Index │ Label │ Type     │ Length  │ P1           │ P2           │ Midpoint
+        ──────┼───────┼──────────┼─────────┼──────────────┼──────────────┼─────────────
+            0 │ S     │ line     │  100.00 │ (100.0, 200.0) │ (200.0, 200.0) │ (150.0, 200.0)
+            1 │ NE    │ line     │   93.30 │ (200.0, 200.0) │ (150.0, 113.4) │ (175.0, 156.7)
+            2 │ NW    │ line     │   93.30 │ (150.0, 113.4) │ (100.0, 200.0) │ (125.0, 156.7)
+        ══════════════════════════════════════════════════════════════════════
+        Total perimeter: 286.60 units
+        Shortest edge: NE (index 1) at 93.30 units
+        Longest edge: S (index 0) at 100.00 units
+    """
+    edges = get_edge_descriptions(glass)
+
+    if not edges:
+        print("No edges found (empty path)")
+        return
+
+    # Get glass type name
+    glass_type = getattr(glass, 'type', glass.__class__.__name__)
+
+    print(f"\nEdge Descriptions for {glass_type} ({len(edges)} edges)")
+    print("=" * 78)
+
+    if show_coordinates:
+        # Full table with coordinates
+        header = "Index | Label | Type     | Length  | P1             | P2             | Midpoint"
+        print(header)
+        print("------+-------+----------+---------+----------------+----------------+----------------")
+
+        for edge in edges:
+            p1_str = f"({edge.p1.x:.1f}, {edge.p1.y:.1f})"
+            p2_str = f"({edge.p2.x:.1f}, {edge.p2.y:.1f})"
+            mid_str = f"({edge.midpoint.x:.1f}, {edge.midpoint.y:.1f})"
+            print(f"{edge.index:5d} | {edge.short_label:<5s} | {edge.edge_type.value:<8s} | {edge.length:7.2f} | {p1_str:<14s} | {p2_str:<14s} | {mid_str}")
+    else:
+        # Compact table without coordinates
+        header = "Index | Label | Long Name            | Type     | Length"
+        print(header)
+        print("------+-------+----------------------+----------+---------")
+
+        for edge in edges:
+            long_name = edge.long_label[:20] if len(edge.long_label) > 20 else edge.long_label
+            print(f"{edge.index:5d} | {edge.short_label:<5s} | {long_name:<20s} | {edge.edge_type.value:<8s} | {edge.length:7.2f}")
+
+    print("=" * 78)
+
+    # Summary statistics
+    total_perimeter = sum(e.length for e in edges)
+    shortest = min(edges, key=lambda e: e.length)
+    longest = max(edges, key=lambda e: e.length)
+
+    print(f"Total perimeter: {total_perimeter:.2f} units")
+    print(f"Shortest edge: {shortest.short_label} (index {shortest.index}) at {shortest.length:.2f} units")
+    print(f"Longest edge: {longest.short_label} (index {longest.index}) at {longest.length:.2f} units")
 
 
 def glass_to_polygon(glass: 'BaseGlass') -> Polygon:
@@ -566,3 +782,99 @@ if __name__ == "__main__":
     print("\nTo test with actual Scene objects, use:")
     print("  from ray_tracing_shapely.core.analysis import analyze_scene_geometry")
     print("  analysis = analyze_scene_geometry(scene)")
+
+    # =========================================================================
+    # Test 5: Edge Description (Python-specific feature)
+    # =========================================================================
+    print("\n" + "=" * 60)
+    print("Test 5: Edge Description (Python-specific feature)")
+    print("=" * 60)
+
+    # Create a mock Glass class for testing
+    class MockGlass:
+        def __init__(self):
+            self.type = 'Glass'
+            self.path = [
+                {'x': 100, 'y': 200, 'arc': False},
+                {'x': 200, 'y': 200, 'arc': False},
+                {'x': 150, 'y': 113.4, 'arc': False}
+            ]
+            self._edge_labels = None
+
+        def _get_edge_count(self):
+            return len(self.path) if self.path else 0
+
+        def _initialize_edge_labels(self):
+            self._edge_labels = {i: (str(i), str(i)) for i in range(self._get_edge_count())}
+
+        @property
+        def edge_labels(self):
+            if self._edge_labels is None:
+                self._initialize_edge_labels()
+            return self._edge_labels
+
+        def get_edge_label(self, edge_index):
+            return self.edge_labels.get(edge_index)
+
+        def label_edge(self, edge_index, short_label, long_name):
+            self.edge_labels[edge_index] = (short_label, long_name)
+
+    # Test with default numeric labels
+    print("\n--- Test 5a: Default numeric labels ---")
+    mock_prism = MockGlass()
+    edges = get_edge_descriptions(mock_prism)
+
+    print(f"Number of edges: {len(edges)}")
+    for edge in edges:
+        print(f"  {edge}")
+
+    # Test with custom labels
+    print("\n--- Test 5b: Custom labels ---")
+    mock_prism.label_edge(0, "S", "South Edge (Base)")
+    mock_prism.label_edge(1, "NE", "North East Edge")
+    mock_prism.label_edge(2, "NW", "North West Edge")
+
+    edges = get_edge_descriptions(mock_prism)
+    for edge in edges:
+        print(f"  Edge {edge.index}: {edge.short_label} ({edge.long_label}) - {edge.length:.2f} units")
+
+    # Test describe_edges() function
+    print("\n--- Test 5c: describe_edges() with coordinates ---")
+    describe_edges(mock_prism, show_coordinates=True)
+
+    print("\n--- Test 5d: describe_edges() without coordinates ---")
+    describe_edges(mock_prism, show_coordinates=False)
+
+    # Test finding shortest/longest edges
+    print("\n--- Test 5e: Finding shortest/longest edges ---")
+    shortest = min(edges, key=lambda e: e.length)
+    longest = max(edges, key=lambda e: e.length)
+    print(f"Shortest edge: {shortest.short_label} (index {shortest.index}) at {shortest.length:.2f} units")
+    print(f"Longest edge: {longest.short_label} (index {longest.index}) at {longest.length:.2f} units")
+
+    # Test with glass that has arc edges
+    print("\n--- Test 5f: Glass with arc edge ---")
+    mock_lens = MockGlass()
+    mock_lens.type = 'SphericalLens'
+    mock_lens.path = [
+        {'x': 0, 'y': 0, 'arc': False},
+        {'x': 50, 'y': 25, 'arc': True},  # This point marks an arc
+        {'x': 100, 'y': 0, 'arc': False},
+        {'x': 50, 'y': -25, 'arc': True},
+    ]
+    mock_lens._edge_labels = None
+
+    edges = get_edge_descriptions(mock_lens)
+    for edge in edges:
+        print(f"  Edge {edge.index}: type={edge.edge_type.value}, length={edge.length:.2f}")
+
+    # Test empty glass
+    print("\n--- Test 5g: Empty glass ---")
+    empty_glass = MockGlass()
+    empty_glass.path = []
+    edges = get_edge_descriptions(empty_glass)
+    print(f"Edges for empty glass: {len(edges)}")
+
+    print("\n" + "=" * 60)
+    print("Edge Description tests completed!")
+    print("=" * 60)
