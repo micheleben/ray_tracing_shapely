@@ -17,6 +17,7 @@ limitations under the License.
 
 import json
 import copy
+import uuid as uuid_module
 from typing import Optional, Dict, Any, List, TypedDict, Union, TYPE_CHECKING
 from dataclasses import dataclass
 
@@ -125,6 +126,16 @@ class BaseSceneObj:
     `surface_merging_objs`. Otherwise, the behavior is undefined, and a warning will be shown.
     """
 
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: Object Identification
+    # =========================================================================
+    # Provides unique identifiers and human-readable names for objects.
+    # - uuid: Auto-generated unique identifier for each object instance
+    # - name: Optional human-readable name for easy identification
+    # These are useful for debugging, logging, XML export, and referencing
+    # objects programmatically.
+    # =========================================================================
+
     def __init__(self, scene, json_obj: Optional[Dict[str, Any]] = None):
         """
         Initialize the base scene object.
@@ -139,6 +150,13 @@ class BaseSceneObj:
 
         self.warning: Optional[str] = None
         """The warning message of the object."""
+
+        # Python-specific: Object identification
+        self._uuid: str = str(uuid_module.uuid4())
+        """Auto-generated unique identifier for this object instance."""
+
+        self._name: Optional[str] = None
+        """Optional human-readable name for the object."""
 
         # Check for unknown keys in the json_obj
         if json_obj:
@@ -517,6 +535,69 @@ class BaseSceneObj:
             The warning message, or None.
         """
         return self.warning
+
+    # ==================== Python-Specific: Object Identification ====================
+
+    @property
+    def uuid(self) -> str:
+        """
+        Get the unique identifier for this object.
+
+        The UUID is auto-generated when the object is created and remains
+        constant for the lifetime of the object instance.
+
+        Returns:
+            The UUID string (e.g., "550e8400-e29b-41d4-a716-446655440000").
+        """
+        return self._uuid
+
+    @property
+    def name(self) -> Optional[str]:
+        """
+        Get the human-readable name of the object.
+
+        Returns:
+            The name if set, or None.
+        """
+        return self._name
+
+    @name.setter
+    def name(self, value: Optional[str]) -> None:
+        """
+        Set the human-readable name of the object.
+
+        Args:
+            value: The name to set, or None to clear.
+        """
+        self._name = value
+
+    def get_display_name(self) -> str:
+        """
+        Get a display name for the object.
+
+        Returns the user-defined name if set, otherwise returns a combination
+        of the object type and a short UUID suffix for identification.
+
+        Returns:
+            A string suitable for display (e.g., "Main Prism" or "Glass_a1b2c3d4").
+        """
+        if self._name:
+            return self._name
+        # Use type + short UUID suffix
+        type_name = self.__class__.type or self.__class__.__name__
+        short_uuid = self._uuid[:8]
+        return f"{type_name}_{short_uuid}"
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the object.
+
+        Returns:
+            String with type, name/uuid, and key properties.
+        """
+        display = self.get_display_name()
+        type_name = self.__class__.type or self.__class__.__name__
+        return f"<{type_name} '{display}'>"
 
 
 # Example of how to create a subclass

@@ -262,10 +262,14 @@ def _describe_edges_text(
     if not edges:
         return "No edges found (empty path)"
 
-    # Get glass type name
+    # Get glass type name and display name (Python-specific)
     glass_type = getattr(glass, 'type', glass.__class__.__name__)
+    display_name = getattr(glass, 'get_display_name', lambda: None)()
 
-    lines.append(f"\nEdge Descriptions for {glass_type} ({len(edges)} edges)")
+    if display_name:
+        lines.append(f"\nEdge Descriptions for '{display_name}' ({glass_type}, {len(edges)} edges)")
+    else:
+        lines.append(f"\nEdge Descriptions for {glass_type} ({len(edges)} edges)")
     lines.append("=" * 78)
 
     if show_coordinates:
@@ -326,7 +330,18 @@ def _describe_edges_xml(glass: 'BaseGlass', edges: List[EdgeDescription]) -> str
     ref_index = getattr(glass, 'refIndex', None)
     total_perimeter = sum(e.length for e in edges) if edges else 0.0
 
+    # Get object identification (Python-specific)
+    obj_uuid = getattr(glass, 'uuid', None)
+    obj_name = getattr(glass, 'name', None)
+    display_name = getattr(glass, 'get_display_name', lambda: None)()
+
     lines.append('  <glass_info>')
+    if obj_uuid:
+        lines.append(f'    <uuid>{_escape_xml(obj_uuid)}</uuid>')
+    if obj_name:
+        lines.append(f'    <name>{_escape_xml(obj_name)}</name>')
+    if display_name:
+        lines.append(f'    <display_name>{_escape_xml(display_name)}</display_name>')
     lines.append(f'    <type>{_escape_xml(glass_type)}</type>')
     lines.append(f'    <edge_count>{len(edges)}</edge_count>')
     lines.append(f'    <total_perimeter>{total_perimeter:.2f}</total_perimeter>')
