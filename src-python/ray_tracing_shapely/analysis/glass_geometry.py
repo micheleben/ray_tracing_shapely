@@ -183,77 +183,176 @@ def get_edge_descriptions(glass: 'BaseGlass') -> List[EdgeDescription]:
     return descriptions
 
 
-def describe_edges(glass: 'BaseGlass', show_coordinates: bool = True) -> None:
+def describe_edges(
+    glass: 'BaseGlass',
+    format: str = 'text',
+    show_coordinates: bool = True
+) -> str:
     """
-    Print a formatted table describing all edges of a glass object.
+    Generate a formatted description of all edges of a glass object.
 
-    Displays edge information including index, label, type, length,
-    and optionally coordinates (endpoints and midpoint).
+    Returns edge information as a string in either human-readable text format
+    or XML format. The text format displays a table with edge properties,
+    while XML format provides structured data suitable for parsing.
 
     Args:
         glass: A BaseGlass object to describe.
+        format: Output format - 'text' for human-readable table, 'xml' for XML.
+            Defaults to 'text'.
         show_coordinates: If True, include endpoint and midpoint coordinates.
-            Defaults to True.
+            Only applies to 'text' format. Defaults to True.
 
-    Example:
+    Returns:
+        Formatted string describing all edges.
+
+    Example (text format):
         >>> from ray_tracing_shapely.analysis import describe_edges
-        >>> describe_edges(prism)
+        >>> print(describe_edges(prism))
 
         Edge Descriptions for Glass (3 edges)
-        ══════════════════════════════════════════════════════════════════════
-        Index │ Label │ Type     │ Length  │ P1           │ P2           │ Midpoint
-        ──────┼───────┼──────────┼─────────┼──────────────┼──────────────┼─────────────
-            0 │ S     │ line     │  100.00 │ (100.0, 200.0) │ (200.0, 200.0) │ (150.0, 200.0)
-            1 │ NE    │ line     │   93.30 │ (200.0, 200.0) │ (150.0, 113.4) │ (175.0, 156.7)
-            2 │ NW    │ line     │   93.30 │ (150.0, 113.4) │ (100.0, 200.0) │ (125.0, 156.7)
-        ══════════════════════════════════════════════════════════════════════
+        ==============================================================================
+        Index | Label | Type     | Length  | P1             | P2             | Midpoint
+        ------+-------+----------+---------+----------------+----------------+----------------
+            0 | S     | line     |  100.00 | (100.0, 200.0) | (200.0, 200.0) | (150.0, 200.0)
+            1 | NE    | line     |   93.30 | (200.0, 200.0) | (150.0, 113.4) | (175.0, 156.7)
+            2 | NW    | line     |   93.30 | (150.0, 113.4) | (100.0, 200.0) | (125.0, 156.7)
+        ==============================================================================
         Total perimeter: 286.60 units
         Shortest edge: NE (index 1) at 93.30 units
         Longest edge: S (index 0) at 100.00 units
+
+    Example (XML format):
+        >>> print(describe_edges(prism, format='xml'))
+        <?xml version="1.0" encoding="UTF-8"?>
+        <glass_edges>
+          <glass_info>
+            <type>Glass</type>
+            <edge_count>3</edge_count>
+            <total_perimeter>286.60</total_perimeter>
+            <refractive_index>1.5</refractive_index>
+          </glass_info>
+          <edges>
+            <edge index="0" short_label="S" long_label="South Edge">
+              <type>line</type>
+              <length>100.00</length>
+              <p1 x="100.0" y="200.0"/>
+              <p2 x="200.0" y="200.0"/>
+              <midpoint x="150.0" y="200.0"/>
+            </edge>
+            ...
+          </edges>
+        </glass_edges>
     """
     edges = get_edge_descriptions(glass)
 
+    if format == 'xml':
+        return _describe_edges_xml(glass, edges)
+    else:
+        return _describe_edges_text(glass, edges, show_coordinates)
+
+
+def _describe_edges_text(
+    glass: 'BaseGlass',
+    edges: List[EdgeDescription],
+    show_coordinates: bool
+) -> str:
+    """Generate human-readable text format for edge descriptions."""
+    lines = []
+
     if not edges:
-        print("No edges found (empty path)")
-        return
+        return "No edges found (empty path)"
 
     # Get glass type name
     glass_type = getattr(glass, 'type', glass.__class__.__name__)
 
-    print(f"\nEdge Descriptions for {glass_type} ({len(edges)} edges)")
-    print("=" * 78)
+    lines.append(f"\nEdge Descriptions for {glass_type} ({len(edges)} edges)")
+    lines.append("=" * 78)
 
     if show_coordinates:
         # Full table with coordinates
         header = "Index | Label | Type     | Length  | P1             | P2             | Midpoint"
-        print(header)
-        print("------+-------+----------+---------+----------------+----------------+----------------")
+        lines.append(header)
+        lines.append("------+-------+----------+---------+----------------+----------------+----------------")
 
         for edge in edges:
             p1_str = f"({edge.p1.x:.1f}, {edge.p1.y:.1f})"
             p2_str = f"({edge.p2.x:.1f}, {edge.p2.y:.1f})"
             mid_str = f"({edge.midpoint.x:.1f}, {edge.midpoint.y:.1f})"
-            print(f"{edge.index:5d} | {edge.short_label:<5s} | {edge.edge_type.value:<8s} | {edge.length:7.2f} | {p1_str:<14s} | {p2_str:<14s} | {mid_str}")
+            lines.append(f"{edge.index:5d} | {edge.short_label:<5s} | {edge.edge_type.value:<8s} | {edge.length:7.2f} | {p1_str:<14s} | {p2_str:<14s} | {mid_str}")
     else:
         # Compact table without coordinates
         header = "Index | Label | Long Name            | Type     | Length"
-        print(header)
-        print("------+-------+----------------------+----------+---------")
+        lines.append(header)
+        lines.append("------+-------+----------------------+----------+---------")
 
         for edge in edges:
             long_name = edge.long_label[:20] if len(edge.long_label) > 20 else edge.long_label
-            print(f"{edge.index:5d} | {edge.short_label:<5s} | {long_name:<20s} | {edge.edge_type.value:<8s} | {edge.length:7.2f}")
+            lines.append(f"{edge.index:5d} | {edge.short_label:<5s} | {long_name:<20s} | {edge.edge_type.value:<8s} | {edge.length:7.2f}")
 
-    print("=" * 78)
+    lines.append("=" * 78)
 
     # Summary statistics
     total_perimeter = sum(e.length for e in edges)
     shortest = min(edges, key=lambda e: e.length)
     longest = max(edges, key=lambda e: e.length)
 
-    print(f"Total perimeter: {total_perimeter:.2f} units")
-    print(f"Shortest edge: {shortest.short_label} (index {shortest.index}) at {shortest.length:.2f} units")
-    print(f"Longest edge: {longest.short_label} (index {longest.index}) at {longest.length:.2f} units")
+    lines.append(f"Total perimeter: {total_perimeter:.2f} units")
+    lines.append(f"Shortest edge: {shortest.short_label} (index {shortest.index}) at {shortest.length:.2f} units")
+    lines.append(f"Longest edge: {longest.short_label} (index {longest.index}) at {longest.length:.2f} units")
+
+    return "\n".join(lines)
+
+
+def _escape_xml(text: str) -> str:
+    """Escape special characters for XML."""
+    return (text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;"))
+
+
+def _describe_edges_xml(glass: 'BaseGlass', edges: List[EdgeDescription]) -> str:
+    """Generate XML format for edge descriptions."""
+    lines = []
+
+    # XML header
+    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+    lines.append('<glass_edges>')
+
+    # Glass info section
+    glass_type = getattr(glass, 'type', glass.__class__.__name__)
+    ref_index = getattr(glass, 'refIndex', None)
+    total_perimeter = sum(e.length for e in edges) if edges else 0.0
+
+    lines.append('  <glass_info>')
+    lines.append(f'    <type>{_escape_xml(glass_type)}</type>')
+    lines.append(f'    <edge_count>{len(edges)}</edge_count>')
+    lines.append(f'    <total_perimeter>{total_perimeter:.2f}</total_perimeter>')
+    if ref_index is not None:
+        lines.append(f'    <refractive_index>{ref_index}</refractive_index>')
+    lines.append('  </glass_info>')
+
+    # Edges section
+    lines.append('  <edges>')
+
+    for edge in edges:
+        short_label = _escape_xml(edge.short_label)
+        long_label = _escape_xml(edge.long_label)
+
+        lines.append(f'    <edge index="{edge.index}" short_label="{short_label}" long_label="{long_label}">')
+        lines.append(f'      <type>{edge.edge_type.value}</type>')
+        lines.append(f'      <length>{edge.length:.2f}</length>')
+        lines.append(f'      <p1 x="{edge.p1.x:.4f}" y="{edge.p1.y:.4f}"/>')
+        lines.append(f'      <p2 x="{edge.p2.x:.4f}" y="{edge.p2.y:.4f}"/>')
+        lines.append(f'      <midpoint x="{edge.midpoint.x:.4f}" y="{edge.midpoint.y:.4f}"/>')
+        lines.append('    </edge>')
+
+    lines.append('  </edges>')
+    lines.append('</glass_edges>')
+
+    return "\n".join(lines)
 
 
 def glass_to_polygon(glass: 'BaseGlass') -> Polygon:
@@ -838,22 +937,29 @@ if __name__ == "__main__":
     for edge in edges:
         print(f"  Edge {edge.index}: {edge.short_label} ({edge.long_label}) - {edge.length:.2f} units")
 
-    # Test describe_edges() function
-    print("\n--- Test 5c: describe_edges() with coordinates ---")
-    describe_edges(mock_prism, show_coordinates=True)
+    # Test describe_edges() function - text format
+    print("\n--- Test 5c: describe_edges() text format with coordinates ---")
+    text_output = describe_edges(mock_prism, format='text', show_coordinates=True)
+    print(text_output)
 
-    print("\n--- Test 5d: describe_edges() without coordinates ---")
-    describe_edges(mock_prism, show_coordinates=False)
+    print("\n--- Test 5d: describe_edges() text format without coordinates ---")
+    text_output = describe_edges(mock_prism, format='text', show_coordinates=False)
+    print(text_output)
+
+    # Test describe_edges() function - XML format
+    print("\n--- Test 5e: describe_edges() XML format ---")
+    xml_output = describe_edges(mock_prism, format='xml')
+    print(xml_output)
 
     # Test finding shortest/longest edges
-    print("\n--- Test 5e: Finding shortest/longest edges ---")
+    print("\n--- Test 5f: Finding shortest/longest edges ---")
     shortest = min(edges, key=lambda e: e.length)
     longest = max(edges, key=lambda e: e.length)
     print(f"Shortest edge: {shortest.short_label} (index {shortest.index}) at {shortest.length:.2f} units")
     print(f"Longest edge: {longest.short_label} (index {longest.index}) at {longest.length:.2f} units")
 
     # Test with glass that has arc edges
-    print("\n--- Test 5f: Glass with arc edge ---")
+    print("\n--- Test 5g: Glass with arc edge ---")
     mock_lens = MockGlass()
     mock_lens.type = 'SphericalLens'
     mock_lens.path = [
@@ -869,7 +975,7 @@ if __name__ == "__main__":
         print(f"  Edge {edge.index}: type={edge.edge_type.value}, length={edge.length:.2f}")
 
     # Test empty glass
-    print("\n--- Test 5g: Empty glass ---")
+    print("\n--- Test 5h: Empty glass ---")
     empty_glass = MockGlass()
     empty_glass.path = []
     edges = get_edge_descriptions(empty_glass)
