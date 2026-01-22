@@ -29,6 +29,7 @@ else:
 if TYPE_CHECKING:
     from .scene import Scene
     from .scene_objs.base_scene_obj import BaseSceneObj
+    from ..analysis.simulation_result import SimulationResult
 
 
 class Simulator:
@@ -131,6 +132,60 @@ class Simulator:
             self.scene.warning = f"Simulation stopped: maximum ray count ({self.max_rays}) reached"
 
         return self.ray_segments
+
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: SimulationResult wrapper
+    # =========================================================================
+
+    def run_with_result(self, name: Optional[str] = None) -> 'SimulationResult':
+        """
+        Run the simulation and return a SimulationResult with full context.
+
+        [PYTHON-SPECIFIC FEATURE]
+
+        This method wraps run() and packages the results into a SimulationResult
+        object that captures:
+        - The ray segments produced
+        - A snapshot of the scene configuration
+        - Metadata for correlating results across runs
+
+        This enables LLM-friendly conversations about multiple simulations:
+        - "In simulation sim_abc123, which rays hit the prism?"
+        - "Compare results between sim_001 and sim_002"
+
+        Args:
+            name: Optional human-readable name for this simulation run
+
+        Returns:
+            SimulationResult containing segments and full context
+
+        Example:
+            >>> simulator = Simulator(scene, max_rays=10000)
+            >>> result = simulator.run_with_result(name="TIR Test Run 1")
+            >>> print(result)
+            SimulationResult('TIR Test Run 1', segments=150, rays=150/10000, status=OK)
+            >>> print(describe_simulation_result(result, format='xml'))
+        """
+        # Import here to avoid circular imports
+        from ..analysis.simulation_result import SimulationResult
+
+        # Run the simulation
+        segments = self.run()
+
+        # Create and return the result wrapper
+        return SimulationResult.create(
+            scene=self.scene,
+            segments=segments,
+            max_rays=self.max_rays,
+            processed_ray_count=self.processed_ray_count,
+            total_truncation=0.0,  # TODO: track truncation in simulation
+            undefined_behavior_count=self.total_undefined_behavior,
+            name=name,
+        )
+
+    # =========================================================================
+    # END PYTHON-SPECIFIC FEATURE
+    # =========================================================================
 
     def _process_rays(self) -> None:
         """

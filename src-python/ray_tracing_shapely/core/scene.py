@@ -15,6 +15,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import random
+import uuid as uuid_module
+from typing import Optional
 
 class Scene:
     """
@@ -76,6 +78,13 @@ class Scene:
         self.warning = None
         self.name = None               # Optional scene name for exports
         self._rng_state = None         # For reproducible random numbers
+        # =====================================================================
+        # PYTHON-SPECIFIC FEATURE: Scene Identification
+        # =====================================================================
+        # Unique identifier for the scene, useful for tracking simulation runs
+        # and correlating results with scene configurations.
+        # =====================================================================
+        self._uuid: str = str(uuid_module.uuid4())
         # =====================================================================
         # PYTHON-SPECIFIC FEATURE: Explicit brightness threshold control
         # =====================================================================
@@ -216,6 +225,46 @@ class Scene:
 
     # =========================================================================
     # END PYTHON-SPECIFIC FEATURE
+    # =========================================================================
+
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: Scene Identification
+    # =========================================================================
+
+    @property
+    def uuid(self) -> str:
+        """
+        Get the unique identifier for this scene.
+
+        [PYTHON-SPECIFIC FEATURE]
+
+        The UUID is auto-generated when the scene is created and remains
+        constant for the lifetime of the scene instance.
+
+        Returns:
+            The UUID string (e.g., "550e8400-e29b-41d4-a716-446655440000").
+        """
+        return self._uuid
+
+    def get_display_name(self) -> str:
+        """
+        Get a display name for the scene.
+
+        [PYTHON-SPECIFIC FEATURE]
+
+        Returns the user-defined name if set, otherwise returns a combination
+        of "Scene" and a short UUID suffix for identification.
+
+        Returns:
+            A string suitable for display (e.g., "TIR Demo" or "Scene_a1b2c3d4").
+        """
+        if self.name:
+            return self.name
+        short_uuid = self._uuid[:8]
+        return f"Scene_{short_uuid}"
+
+    # =========================================================================
+    # END PYTHON-SPECIFIC FEATURE: Scene Identification
     # =========================================================================
 
     def rng(self):

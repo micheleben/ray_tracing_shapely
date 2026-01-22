@@ -48,6 +48,11 @@ from .saving import (
     filter_tir_rays,
     get_ray_statistics,
 )
+from .simulation_result import (
+    SceneSnapshot,
+    SimulationResult,
+    describe_simulation_result,
+)
 
 __all__ = [
     # Glass geometry analysis
@@ -65,5 +70,9 @@ __all__ = [
     'save_rays_csv',
     'filter_tir_rays',
     'get_ray_statistics',
+    # Simulation result container (Python-specific)
+    'SceneSnapshot',
+    'SimulationResult',
+    'describe_simulation_result',
 ]
 
