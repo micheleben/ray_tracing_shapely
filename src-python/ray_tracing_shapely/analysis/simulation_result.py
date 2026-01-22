@@ -28,9 +28,10 @@ relationships to scene configurations.
 """
 
 import uuid as uuid_module
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..core.ray import Ray
@@ -233,6 +234,233 @@ class SimulationResult:
         """Check if the simulation hit the maximum ray limit."""
         return self.processed_ray_count >= self.max_rays
 
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: Wavelength and Source Analysis
+    # =========================================================================
+    # These methods enable analysis of ray results grouped by wavelength or
+    # source, useful for prism dispersion studies and multi-wavelength sims.
+    # =========================================================================
+
+    @property
+    def unique_wavelengths(self) -> Set[Optional[float]]:
+        """
+        Get the set of unique wavelengths in the simulation results.
+
+        Returns:
+            Set of wavelength values (includes None if white light rays present)
+        """
+        return {seg.wavelength for seg in self.segments}
+
+    @property
+    def unique_source_uuids(self) -> Set[Optional[str]]:
+        """
+        Get the set of unique source UUIDs in the simulation results.
+
+        Returns:
+            Set of source UUID strings (includes None if source not tracked)
+        """
+        return {getattr(seg, 'source_uuid', None) for seg in self.segments}
+
+    @property
+    def unique_labels(self) -> Set[Optional[str]]:
+        """
+        Get the set of unique source labels in the simulation results.
+
+        Returns:
+            Set of label strings (includes None if label not set)
+        """
+        return {getattr(seg, 'source_label', None) for seg in self.segments}
+
+    def get_wavelength_groups(self) -> Dict[Optional[float], List['Ray']]:
+        """
+        Group ray segments by wavelength.
+
+        Returns:
+            Dictionary mapping wavelength (or None for white light) to list of rays
+
+        Example:
+            >>> groups = result.get_wavelength_groups()
+            >>> red_rays = groups.get(650, [])
+            >>> print(f"Red rays: {len(red_rays)}")
+        """
+        groups: Dict[Optional[float], List['Ray']] = defaultdict(list)
+        for seg in self.segments:
+            groups[seg.wavelength].append(seg)
+        return dict(groups)
+
+    def get_source_groups(self) -> Dict[Optional[str], List['Ray']]:
+        """
+        Group ray segments by source UUID.
+
+        Returns:
+            Dictionary mapping source UUID (or None) to list of rays
+
+        Example:
+            >>> groups = result.get_source_groups()
+            >>> for source_uuid, rays in groups.items():
+            ...     print(f"Source {source_uuid[:8]}: {len(rays)} rays")
+        """
+        groups: Dict[Optional[str], List['Ray']] = defaultdict(list)
+        for seg in self.segments:
+            source_uuid = getattr(seg, 'source_uuid', None)
+            groups[source_uuid].append(seg)
+        return dict(groups)
+
+    def get_label_groups(self) -> Dict[Optional[str], List['Ray']]:
+        """
+        Group ray segments by source label.
+
+        Returns:
+            Dictionary mapping label (or None) to list of rays
+
+        Example:
+            >>> groups = result.get_label_groups()
+            >>> red_rays = groups.get('Red Ray', [])
+            >>> chief_rays = groups.get('Chief Ray', [])
+        """
+        groups: Dict[Optional[str], List['Ray']] = defaultdict(list)
+        for seg in self.segments:
+            label = getattr(seg, 'source_label', None)
+            groups[label].append(seg)
+        return dict(groups)
+
+    def get_rays_by_wavelength(
+        self,
+        wavelength: float,
+        tolerance: float = 1.0
+    ) -> List['Ray']:
+        """
+        Get all rays near a specific wavelength.
+
+        Args:
+            wavelength: Target wavelength in nm
+            tolerance: Tolerance in nm (default: 1.0)
+
+        Returns:
+            List of rays within tolerance of the target wavelength
+
+        Example:
+            >>> red_rays = result.get_rays_by_wavelength(650, tolerance=5)
+        """
+        return [
+            seg for seg in self.segments
+            if seg.wavelength is not None
+            and abs(seg.wavelength - wavelength) <= tolerance
+        ]
+
+    def get_rays_by_label(self, label: str) -> List['Ray']:
+        """
+        Get all rays with a specific source label.
+
+        Args:
+            label: The source label to match (exact match)
+
+        Returns:
+            List of rays with the specified label
+
+        Example:
+            >>> red_rays = result.get_rays_by_label('Red Ray')
+            >>> chief_rays = result.get_rays_by_label('Chief Ray')
+        """
+        return [
+            seg for seg in self.segments
+            if getattr(seg, 'source_label', None) == label
+        ]
+
+    def get_rays_by_source(self, source_uuid: str) -> List['Ray']:
+        """
+        Get all rays from a specific source.
+
+        Args:
+            source_uuid: The UUID of the source (can be partial, matches prefix)
+
+        Returns:
+            List of rays from the specified source
+
+        Example:
+            >>> rays = result.get_rays_by_source(red_source.uuid)
+            >>> # Or with partial UUID:
+            >>> rays = result.get_rays_by_source('abc123')
+        """
+        return [
+            seg for seg in self.segments
+            if getattr(seg, 'source_uuid', None) is not None
+            and getattr(seg, 'source_uuid', '').startswith(source_uuid)
+        ]
+
+    def get_wavelength_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about wavelengths in the simulation.
+
+        Returns:
+            Dictionary with wavelength statistics:
+            - wavelength_count: Number of unique wavelengths
+            - wavelengths: Dict mapping wavelength to ray count
+            - has_white_light: True if any rays have None wavelength
+            - min_wavelength: Minimum wavelength (excluding None)
+            - max_wavelength: Maximum wavelength (excluding None)
+
+        Example:
+            >>> stats = result.get_wavelength_statistics()
+            >>> print(f"Wavelengths: {stats['wavelength_count']}")
+            >>> for wl, count in stats['wavelengths'].items():
+            ...     print(f"  {wl}nm: {count} rays")
+        """
+        groups = self.get_wavelength_groups()
+
+        # Count rays per wavelength
+        wavelength_counts = {wl: len(rays) for wl, rays in groups.items()}
+
+        # Get numeric wavelengths only
+        numeric_wavelengths = [wl for wl in groups.keys() if wl is not None]
+
+        return {
+            'wavelength_count': len(groups),
+            'wavelengths': wavelength_counts,
+            'has_white_light': None in groups,
+            'min_wavelength': min(numeric_wavelengths) if numeric_wavelengths else None,
+            'max_wavelength': max(numeric_wavelengths) if numeric_wavelengths else None,
+        }
+
+    def get_source_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about ray sources in the simulation.
+
+        Returns:
+            Dictionary with source statistics:
+            - source_count: Number of unique sources
+            - sources: Dict mapping source_uuid to {label, ray_count}
+            - has_unlabeled: True if any rays have no source tracking
+
+        Example:
+            >>> stats = result.get_source_statistics()
+            >>> for uuid, info in stats['sources'].items():
+            ...     print(f"  {info['label']}: {info['ray_count']} rays")
+        """
+        source_groups = self.get_source_groups()
+        label_by_uuid: Dict[Optional[str], Optional[str]] = {}
+
+        # Build label mapping
+        for seg in self.segments:
+            source_uuid = getattr(seg, 'source_uuid', None)
+            if source_uuid and source_uuid not in label_by_uuid:
+                label_by_uuid[source_uuid] = getattr(seg, 'source_label', None)
+
+        # Build source info
+        sources = {}
+        for source_uuid, rays in source_groups.items():
+            if source_uuid is not None:
+                sources[source_uuid] = {
+                    'label': label_by_uuid.get(source_uuid),
+                    'ray_count': len(rays),
+                }
+
+        return {
+            'source_count': len([k for k in source_groups.keys() if k is not None]),
+            'sources': sources,
+            'has_unlabeled': None in source_groups,
+        }
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         status = "OK" if self.success else "ERROR"
@@ -381,6 +609,35 @@ def _describe_result_xml(
         lines.append('    <warnings/>')
     lines.append('  </status>')
 
+    # Wavelength analysis section (Python-specific)
+    wl_stats = result.get_wavelength_statistics()
+    if wl_stats['wavelength_count'] > 0:
+        lines.append('  <wavelength_analysis>')
+        lines.append(f'    <wavelength_count>{wl_stats["wavelength_count"]}</wavelength_count>')
+        lines.append(f'    <has_white_light>{str(wl_stats["has_white_light"]).lower()}</has_white_light>')
+        if wl_stats['min_wavelength'] is not None:
+            lines.append(f'    <min_wavelength>{wl_stats["min_wavelength"]}</min_wavelength>')
+            lines.append(f'    <max_wavelength>{wl_stats["max_wavelength"]}</max_wavelength>')
+        lines.append('    <wavelengths>')
+        for wl, count in sorted(wl_stats['wavelengths'].items(), key=lambda x: (x[0] is None, x[0])):
+            wl_str = 'white' if wl is None else str(wl)
+            lines.append(f'      <wavelength nm="{wl_str}" ray_count="{count}"/>')
+        lines.append('    </wavelengths>')
+        lines.append('  </wavelength_analysis>')
+
+    # Source analysis section (Python-specific)
+    src_stats = result.get_source_statistics()
+    if src_stats['source_count'] > 0:
+        lines.append('  <source_analysis>')
+        lines.append(f'    <source_count>{src_stats["source_count"]}</source_count>')
+        lines.append(f'    <has_unlabeled>{str(src_stats["has_unlabeled"]).lower()}</has_unlabeled>')
+        lines.append('    <sources>')
+        for uuid, info in src_stats['sources'].items():
+            label_attr = f' label="{_escape_xml(info["label"])}"' if info['label'] else ''
+            lines.append(f'      <source uuid="{_escape_xml(uuid)}"{label_attr} ray_count="{info["ray_count"]}"/>')
+        lines.append('    </sources>')
+        lines.append('  </source_analysis>')
+
     # Optional segments section
     if include_segments and result.segments:
         lines.append('  <segments>')
@@ -392,11 +649,25 @@ def _describe_result_xml(
             if getattr(seg, 'caused_tir', False):
                 tir_attrs += ' caused_tir="true"'
 
-            lines.append(f'    <segment index="{i}" brightness="{brightness:.4f}"{tir_attrs}>')
-            lines.append(f'      <p1 x="{seg.p1["x"]:.4f}" y="{seg.p1["y"]:.4f}"/>')
-            lines.append(f'      <p2 x="{seg.p2["x"]:.4f}" y="{seg.p2["y"]:.4f}"/>')
+            # Add source label attribute if present
+            source_label = getattr(seg, 'source_label', None)
+            label_attr = f' label="{_escape_xml(source_label)}"' if source_label else ''
+
+            # Handle both dict and Point objects for p1/p2
+            p1_x = seg.p1['x'] if isinstance(seg.p1, dict) else seg.p1.x
+            p1_y = seg.p1['y'] if isinstance(seg.p1, dict) else seg.p1.y
+            p2_x = seg.p2['x'] if isinstance(seg.p2, dict) else seg.p2.x
+            p2_y = seg.p2['y'] if isinstance(seg.p2, dict) else seg.p2.y
+
+            lines.append(f'    <segment index="{i}" brightness="{brightness:.4f}"{tir_attrs}{label_attr}>')
+            lines.append(f'      <p1 x="{p1_x:.4f}" y="{p1_y:.4f}"/>')
+            lines.append(f'      <p2 x="{p2_x:.4f}" y="{p2_y:.4f}"/>')
             if seg.wavelength is not None:
                 lines.append(f'      <wavelength>{seg.wavelength}</wavelength>')
+            # Add source UUID if present
+            source_uuid = getattr(seg, 'source_uuid', None)
+            if source_uuid:
+                lines.append(f'      <source_uuid>{_escape_xml(source_uuid)}</source_uuid>')
             lines.append('    </segment>')
 
         if len(result.segments) > max_segments:
@@ -456,23 +727,56 @@ def _describe_result_text(
         for warning in result.warnings:
             lines.append(f"    - {warning}")
 
+    # Wavelength analysis (Python-specific)
+    wl_stats = result.get_wavelength_statistics()
+    if wl_stats['wavelength_count'] > 0:
+        lines.append("\nWavelength Analysis:")
+        lines.append(f"  Unique wavelengths: {wl_stats['wavelength_count']}")
+        if wl_stats['min_wavelength'] is not None:
+            lines.append(f"  Range: {wl_stats['min_wavelength']}nm - {wl_stats['max_wavelength']}nm")
+        if wl_stats['has_white_light']:
+            lines.append("  White light (None): present")
+        lines.append("  By wavelength:")
+        for wl, count in sorted(wl_stats['wavelengths'].items(), key=lambda x: (x[0] is None, x[0])):
+            wl_str = 'white' if wl is None else f'{wl}nm'
+            lines.append(f"    {wl_str}: {count} rays")
+
+    # Source analysis (Python-specific)
+    src_stats = result.get_source_statistics()
+    if src_stats['source_count'] > 0:
+        lines.append("\nSource Analysis:")
+        lines.append(f"  Unique sources: {src_stats['source_count']}")
+        lines.append("  By source:")
+        for uuid, info in src_stats['sources'].items():
+            label = info['label'] or f"(uuid: {uuid[:8]}...)"
+            lines.append(f"    {label}: {info['ray_count']} rays")
+
     # Optional segments
     if include_segments and result.segments:
         lines.append(f"\nSegments (first {min(max_segments, len(result.segments))} of {len(result.segments)}):")
-        lines.append("-" * 70)
-        lines.append(f"{'Index':>6} | {'Brightness':>10} | {'P1':>20} | {'P2':>20} | TIR")
-        lines.append("-" * 70)
+        lines.append("-" * 90)
+        lines.append(f"{'Index':>6} | {'Label':>12} | {'WL(nm)':>7} | {'Brightness':>10} | {'P1':>16} | {'P2':>16} | TIR")
+        lines.append("-" * 90)
 
         for i, seg in enumerate(result.segments[:max_segments]):
             brightness = seg.brightness_s + seg.brightness_p
-            p1_str = f"({seg.p1['x']:.2f}, {seg.p1['y']:.2f})"
-            p2_str = f"({seg.p2['x']:.2f}, {seg.p2['y']:.2f})"
+            # Handle both dict and Point objects for p1/p2
+            p1_x = seg.p1['x'] if isinstance(seg.p1, dict) else seg.p1.x
+            p1_y = seg.p1['y'] if isinstance(seg.p1, dict) else seg.p1.y
+            p2_x = seg.p2['x'] if isinstance(seg.p2, dict) else seg.p2.x
+            p2_y = seg.p2['y'] if isinstance(seg.p2, dict) else seg.p2.y
+            p1_str = f"({p1_x:.1f}, {p1_y:.1f})"
+            p2_str = f"({p2_x:.1f}, {p2_y:.1f})"
             tir_str = ""
             if getattr(seg, 'is_tir_result', False):
                 tir_str = "TIR"
             if getattr(seg, 'caused_tir', False):
                 tir_str += "->TIR"
-            lines.append(f"{i:>6} | {brightness:>10.4f} | {p1_str:>20} | {p2_str:>20} | {tir_str}")
+            # Add label and wavelength
+            label = getattr(seg, 'source_label', None) or ''
+            label_str = label[:12] if len(label) > 12 else label
+            wl_str = str(int(seg.wavelength)) if seg.wavelength else '-'
+            lines.append(f"{i:>6} | {label_str:>12} | {wl_str:>7} | {brightness:>10.4f} | {p1_str:>16} | {p2_str:>16} | {tir_str}")
 
         if len(result.segments) > max_segments:
             lines.append(f"  ... and {len(result.segments) - max_segments} more segments")

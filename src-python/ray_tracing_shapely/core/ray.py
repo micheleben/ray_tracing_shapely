@@ -40,6 +40,11 @@ class Ray:
         is_tir_result (bool): True if this segment was produced BY a TIR event
         caused_tir (bool): True if this segment's endpoint caused TIR
         tir_count (int): Cumulative TIR count in this ray's lineage
+
+    Source Tracking Attributes (PYTHON-SPECIFIC FEATURE):
+        source_uuid (str or None): UUID of the light source that emitted this ray
+        source_label (str or None): Human-readable label for ray identification
+            (e.g., "red", "green", "blue", "chief", "marginal_upper")
     """
 
     def __init__(
@@ -79,6 +84,15 @@ class Ray:
         self.caused_tir: bool = False     # True if this segment's endpoint caused TIR
         self.tir_count: int = 0           # Cumulative TIR count in this ray's lineage
 
+        # =====================================================================
+        # PYTHON-SPECIFIC FEATURE: Source Tracking
+        # =====================================================================
+        # These attributes enable correlation between rays and their sources,
+        # useful for prism dispersion analysis and multi-wavelength simulations.
+        # =====================================================================
+        self.source_uuid: Optional[str] = None   # UUID of the emitting light source
+        self.source_label: Optional[str] = None  # Human-readable label (e.g., "red", "chief")
+
     def copy(self) -> 'Ray':
         """
         Create a copy of this ray.
@@ -100,6 +114,9 @@ class Ray:
         new_ray.is_tir_result = self.is_tir_result
         new_ray.caused_tir = False  # Don't copy - caused_tir is position-specific, set by simulator
         new_ray.tir_count = self.tir_count
+        # PYTHON-SPECIFIC: Copy source tracking attributes
+        new_ray.source_uuid = self.source_uuid
+        new_ray.source_label = self.source_label
         return new_ray
 
     @property
@@ -126,10 +143,16 @@ class Ray:
             if self.tir_count > 0:
                 tir_parts.append(f"tir_count={self.tir_count}")
             tir_str = ", " + ", ".join(tir_parts)
+        # PYTHON-SPECIFIC: Include source info in repr
+        source_str: str = ""
+        if self.source_label:
+            source_str = f", label='{self.source_label}'"
+        elif self.source_uuid:
+            source_str = f", source={self.source_uuid[:8]}..."
         return (f"Ray(p1={self.p1}, p2={self.p2}, "
                 f"brightness=({self.brightness_s:.6f}, {self.brightness_p:.6f}), "
                 f"total={self.total_brightness:.6f}, "
-                f"wavelength={self.wavelength}{gap_str}{tir_str})")
+                f"wavelength={self.wavelength}{gap_str}{tir_str}{source_str})")
 
 
 # Example usage and testing

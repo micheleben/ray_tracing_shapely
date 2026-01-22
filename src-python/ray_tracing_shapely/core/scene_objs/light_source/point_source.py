@@ -270,6 +270,14 @@ class PointSource(BaseSceneObj):
                 ray.gap = True
                 first_ray = False
 
+            # =====================================================================
+            # PYTHON-SPECIFIC FEATURE: Source Tracking
+            # =====================================================================
+            # Tag rays with source UUID and name for correlation in results
+            # =====================================================================
+            ray.source_uuid = self.uuid
+            ray.source_label = self.name  # Use source's name as the ray label
+
             new_rays.append(ray)
             angle += angular_step
 

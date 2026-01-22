@@ -247,6 +247,14 @@ class SingleRay(BaseSceneObj):
         # Mark as new ray
         ray.isNew = True
 
+        # =====================================================================
+        # PYTHON-SPECIFIC FEATURE: Source Tracking
+        # =====================================================================
+        # Tag the ray with the source's UUID and name for correlation in results
+        # =====================================================================
+        ray.source_uuid = self.uuid
+        ray.source_label = self.name  # Use source's name as the ray label
+
         return {
             'newRays': [ray]
         }
