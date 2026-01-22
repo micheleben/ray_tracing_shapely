@@ -95,6 +95,13 @@ def save_rays_csv(
             'is_tir_result',
             'caused_tir',
             'tir_count',
+            # Grazing incidence flags (Python-specific)
+            'is_grazing_result__angle',
+            'caused_grazing__angle',
+            'is_grazing_result__polar',
+            'caused_grazing__polar',
+            'is_grazing_result__transm',
+            'caused_grazing__transm',
         ])
 
         coord_fmt = f"{{:.{precision_coords}f}}"
@@ -120,6 +127,13 @@ def save_rays_csv(
                 ray.is_tir_result,
                 ray.caused_tir,
                 ray.tir_count,
+                # Grazing incidence flags (Python-specific)
+                getattr(ray, 'is_grazing_result__angle', False),
+                getattr(ray, 'caused_grazing__angle', False),
+                getattr(ray, 'is_grazing_result__polar', False),
+                getattr(ray, 'caused_grazing__polar', False),
+                getattr(ray, 'is_grazing_result__transm', False),
+                getattr(ray, 'caused_grazing__transm', False),
             ])
 
     return csv_file
@@ -147,6 +161,63 @@ def filter_tir_rays(ray_segments: List[Ray], tir_only: bool = True) -> List[Ray]
         return [ray for ray in ray_segments if not ray.is_tir_result and ray.tir_count == 0]
 
 
+def filter_grazing_rays(
+    ray_segments: List[Ray],
+    grazing_only: bool = True,
+    criterion: Optional[str] = None
+) -> List[Ray]:
+    """
+    Filter rays based on grazing incidence status.
+
+    Grazing incidence occurs at angles near the critical angle, where
+    polarization effects become extreme. Three independent criteria are tracked:
+    - 'angle': Incidence angle above threshold (e.g., 85°)
+    - 'polar': Polarization ratio (p/s) above threshold
+    - 'transm': Total transmission below threshold
+
+    Args:
+        ray_segments: List of Ray objects to filter.
+        grazing_only: If True, return only rays that experienced grazing.
+            If False, return rays that did NOT experience grazing.
+        criterion: Optional specific criterion to filter by:
+            - 'angle': Only angle criterion
+            - 'polar': Only polarization criterion
+            - 'transm': Only transmission criterion
+            - None: Any criterion (default)
+
+    Returns:
+        List[Ray]: Filtered list of rays.
+
+    Example:
+        >>> # Get all grazing rays (any criterion)
+        >>> grazing_rays = filter_grazing_rays(ray_segments)
+        >>> # Get only rays that triggered the angle criterion
+        >>> angle_grazing = filter_grazing_rays(ray_segments, criterion='angle')
+        >>> # Get rays that did NOT experience grazing
+        >>> non_grazing = filter_grazing_rays(ray_segments, grazing_only=False)
+    """
+    def is_grazing(ray: Ray) -> bool:
+        """Check if ray experienced grazing based on criterion."""
+        if criterion == 'angle':
+            return getattr(ray, 'is_grazing_result__angle', False)
+        elif criterion == 'polar':
+            return getattr(ray, 'is_grazing_result__polar', False)
+        elif criterion == 'transm':
+            return getattr(ray, 'is_grazing_result__transm', False)
+        else:
+            # Any criterion
+            return (
+                getattr(ray, 'is_grazing_result__angle', False) or
+                getattr(ray, 'is_grazing_result__polar', False) or
+                getattr(ray, 'is_grazing_result__transm', False)
+            )
+
+    if grazing_only:
+        return [ray for ray in ray_segments if is_grazing(ray)]
+    else:
+        return [ray for ray in ray_segments if not is_grazing(ray)]
+
+
 def get_ray_statistics(ray_segments: List[Ray]) -> dict:
     """
     Compute statistics about a collection of ray segments.
@@ -164,11 +235,16 @@ def get_ray_statistics(ray_segments: List[Ray]) -> dict:
             - max_tir_count: Maximum TIR count in any ray lineage
             - wavelengths: Set of unique wavelengths (None for white light)
             - total_length: Sum of all ray segment lengths
+            - grazing_rays_angle: Number of rays with grazing angle criterion
+            - grazing_rays_polar: Number of rays with grazing polarization criterion
+            - grazing_rays_transm: Number of rays with grazing transmission criterion
+            - grazing_rays_any: Number of rays with any grazing criterion
 
     Example:
         >>> stats = get_ray_statistics(ray_segments)
         >>> print(f"Total rays: {stats['total_rays']}")
         >>> print(f"TIR events: {stats['tir_rays']}")
+        >>> print(f"Grazing events: {stats['grazing_rays_any']}")
     """
     if not ray_segments:
         return {
@@ -180,6 +256,10 @@ def get_ray_statistics(ray_segments: List[Ray]) -> dict:
             'max_tir_count': 0,
             'wavelengths': set(),
             'total_length': 0.0,
+            'grazing_rays_angle': 0,
+            'grazing_rays_polar': 0,
+            'grazing_rays_transm': 0,
+            'grazing_rays_any': 0,
         }
 
     tir_count = sum(1 for ray in ray_segments if ray.is_tir_result or ray.tir_count > 0)
@@ -187,6 +267,16 @@ def get_ray_statistics(ray_segments: List[Ray]) -> dict:
     total_brightness = sum(ray.total_brightness for ray in ray_segments)
     max_tir = max(ray.tir_count for ray in ray_segments)
     wavelengths = {ray.wavelength for ray in ray_segments}
+
+    # Grazing incidence statistics
+    grazing_angle = sum(1 for ray in ray_segments if getattr(ray, 'is_grazing_result__angle', False))
+    grazing_polar = sum(1 for ray in ray_segments if getattr(ray, 'is_grazing_result__polar', False))
+    grazing_transm = sum(1 for ray in ray_segments if getattr(ray, 'is_grazing_result__transm', False))
+    grazing_any = sum(1 for ray in ray_segments if (
+        getattr(ray, 'is_grazing_result__angle', False) or
+        getattr(ray, 'is_grazing_result__polar', False) or
+        getattr(ray, 'is_grazing_result__transm', False)
+    ))
 
     total_length = 0.0
     for ray in ray_segments:
@@ -203,4 +293,8 @@ def get_ray_statistics(ray_segments: List[Ray]) -> dict:
         'max_tir_count': max_tir,
         'wavelengths': wavelengths,
         'total_length': total_length,
+        'grazing_rays_angle': grazing_angle,
+        'grazing_rays_polar': grazing_polar,
+        'grazing_rays_transm': grazing_transm,
+        'grazing_rays_any': grazing_any,
     }

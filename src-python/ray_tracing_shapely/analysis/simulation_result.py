@@ -461,6 +461,74 @@ class SimulationResult:
             'has_unlabeled': None in source_groups,
         }
 
+    def get_grazing_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about grazing incidence in the simulation.
+
+        [PYTHON-SPECIFIC FEATURE]
+
+        Grazing incidence occurs at angles near the critical angle, where
+        polarization effects become extreme. Three independent criteria are tracked.
+
+        Returns:
+            Dictionary with grazing statistics:
+            - grazing_angle_count: Rays flagged by angle criterion
+            - grazing_polar_count: Rays flagged by polarization criterion
+            - grazing_transm_count: Rays flagged by transmission criterion
+            - grazing_any_count: Rays flagged by any criterion
+            - has_grazing: True if any grazing events detected
+
+        Example:
+            >>> stats = result.get_grazing_statistics()
+            >>> print(f"Grazing events: {stats['grazing_any_count']}")
+            >>> if stats['has_grazing']:
+            ...     print(f"  By angle: {stats['grazing_angle_count']}")
+        """
+        angle_count = sum(1 for seg in self.segments
+                         if getattr(seg, 'is_grazing_result__angle', False))
+        polar_count = sum(1 for seg in self.segments
+                         if getattr(seg, 'is_grazing_result__polar', False))
+        transm_count = sum(1 for seg in self.segments
+                          if getattr(seg, 'is_grazing_result__transm', False))
+        any_count = sum(1 for seg in self.segments
+                       if (getattr(seg, 'is_grazing_result__angle', False) or
+                           getattr(seg, 'is_grazing_result__polar', False) or
+                           getattr(seg, 'is_grazing_result__transm', False)))
+
+        return {
+            'grazing_angle_count': angle_count,
+            'grazing_polar_count': polar_count,
+            'grazing_transm_count': transm_count,
+            'grazing_any_count': any_count,
+            'has_grazing': any_count > 0,
+        }
+
+    def get_tir_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about TIR (Total Internal Reflection) in the simulation.
+
+        [PYTHON-SPECIFIC FEATURE]
+
+        Returns:
+            Dictionary with TIR statistics:
+            - tir_count: Number of rays that experienced TIR
+            - max_tir_count: Maximum TIR count in any ray lineage
+            - has_tir: True if any TIR events detected
+
+        Example:
+            >>> stats = result.get_tir_statistics()
+            >>> print(f"TIR events: {stats['tir_count']}")
+        """
+        tir_count = sum(1 for seg in self.segments
+                       if getattr(seg, 'is_tir_result', False))
+        max_tir = max((getattr(seg, 'tir_count', 0) for seg in self.segments), default=0)
+
+        return {
+            'tir_count': tir_count,
+            'max_tir_count': max_tir,
+            'has_tir': tir_count > 0,
+        }
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         status = "OK" if self.success else "ERROR"
@@ -638,6 +706,24 @@ def _describe_result_xml(
         lines.append('    </sources>')
         lines.append('  </source_analysis>')
 
+    # TIR analysis section (Python-specific)
+    tir_stats = result.get_tir_statistics()
+    if tir_stats['has_tir']:
+        lines.append('  <tir_analysis>')
+        lines.append(f'    <tir_count>{tir_stats["tir_count"]}</tir_count>')
+        lines.append(f'    <max_tir_count>{tir_stats["max_tir_count"]}</max_tir_count>')
+        lines.append('  </tir_analysis>')
+
+    # Grazing incidence analysis section (Python-specific)
+    grazing_stats = result.get_grazing_statistics()
+    if grazing_stats['has_grazing']:
+        lines.append('  <grazing_analysis>')
+        lines.append(f'    <grazing_any_count>{grazing_stats["grazing_any_count"]}</grazing_any_count>')
+        lines.append(f'    <grazing_angle_count>{grazing_stats["grazing_angle_count"]}</grazing_angle_count>')
+        lines.append(f'    <grazing_polar_count>{grazing_stats["grazing_polar_count"]}</grazing_polar_count>')
+        lines.append(f'    <grazing_transm_count>{grazing_stats["grazing_transm_count"]}</grazing_transm_count>')
+        lines.append('  </grazing_analysis>')
+
     # Optional segments section
     if include_segments and result.segments:
         lines.append('  <segments>')
@@ -649,6 +735,15 @@ def _describe_result_xml(
             if getattr(seg, 'caused_tir', False):
                 tir_attrs += ' caused_tir="true"'
 
+            # Add grazing incidence attributes
+            grazing_attrs = ""
+            if getattr(seg, 'is_grazing_result__angle', False):
+                grazing_attrs += ' grazing_angle="true"'
+            if getattr(seg, 'is_grazing_result__polar', False):
+                grazing_attrs += ' grazing_polar="true"'
+            if getattr(seg, 'is_grazing_result__transm', False):
+                grazing_attrs += ' grazing_transm="true"'
+
             # Add source label attribute if present
             source_label = getattr(seg, 'source_label', None)
             label_attr = f' label="{_escape_xml(source_label)}"' if source_label else ''
@@ -659,7 +754,7 @@ def _describe_result_xml(
             p2_x = seg.p2['x'] if isinstance(seg.p2, dict) else seg.p2.x
             p2_y = seg.p2['y'] if isinstance(seg.p2, dict) else seg.p2.y
 
-            lines.append(f'    <segment index="{i}" brightness="{brightness:.4f}"{tir_attrs}{label_attr}>')
+            lines.append(f'    <segment index="{i}" brightness="{brightness:.4f}"{tir_attrs}{grazing_attrs}{label_attr}>')
             lines.append(f'      <p1 x="{p1_x:.4f}" y="{p1_y:.4f}"/>')
             lines.append(f'      <p2 x="{p2_x:.4f}" y="{p2_y:.4f}"/>')
             if seg.wavelength is not None:
@@ -750,6 +845,22 @@ def _describe_result_text(
         for uuid, info in src_stats['sources'].items():
             label = info['label'] or f"(uuid: {uuid[:8]}...)"
             lines.append(f"    {label}: {info['ray_count']} rays")
+
+    # TIR analysis (Python-specific)
+    tir_stats = result.get_tir_statistics()
+    if tir_stats['has_tir']:
+        lines.append("\nTIR (Total Internal Reflection) Analysis:")
+        lines.append(f"  TIR events: {tir_stats['tir_count']}")
+        lines.append(f"  Max TIR count in lineage: {tir_stats['max_tir_count']}")
+
+    # Grazing incidence analysis (Python-specific)
+    grazing_stats = result.get_grazing_statistics()
+    if grazing_stats['has_grazing']:
+        lines.append("\nGrazing Incidence Analysis:")
+        lines.append(f"  Total grazing events: {grazing_stats['grazing_any_count']}")
+        lines.append(f"  By angle criterion: {grazing_stats['grazing_angle_count']}")
+        lines.append(f"  By polarization criterion: {grazing_stats['grazing_polar_count']}")
+        lines.append(f"  By transmission criterion: {grazing_stats['grazing_transm_count']}")
 
     # Optional segments
     if include_segments and result.segments:
