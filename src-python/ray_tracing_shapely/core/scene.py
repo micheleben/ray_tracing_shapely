@@ -95,6 +95,25 @@ class Scene:
         # =====================================================================
         self._min_brightness_exp = None  # None = auto (based on color_mode)
 
+        # =====================================================================
+        # PYTHON-SPECIFIC FEATURE: Grazing Incidence Detection Thresholds
+        # =====================================================================
+        # These thresholds control when rays are flagged as experiencing grazing
+        # incidence (near-critical-angle refraction). Three independent criteria:
+        #
+        # 1. Angle threshold: incidence angle above this value (degrees)
+        #    Default 85° means angles within 5° of critical angle are flagged
+        #
+        # 2. Polarization ratio threshold: brightness_p / brightness_s after refraction
+        #    Default 10.0 means p-polarized transmits 10x more than s-polarized
+        #
+        # 3. Transmission ratio threshold: total transmitted / total incident
+        #    Default 0.1 means less than 10% of incident energy is transmitted
+        # =====================================================================
+        self.grazing_angle_threshold: float = 85.0  # degrees
+        self.grazing_polarization_ratio_threshold: float = 10.0  # brightness_p / brightness_s
+        self.grazing_transmission_threshold: float = 0.1  # T_ratio = transmitted / incident
+
     @property
     def color_mode(self):
         """Get the color rendering mode."""

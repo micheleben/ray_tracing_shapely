@@ -281,6 +281,17 @@ class Simulator:
                     output_ray_geom.tir_count = getattr(ray, 'tir_count', 0)
                     output_ray_geom.is_tir_result = False  # Will be set by refract() if TIR occurs
 
+                    # =====================================================================
+                    # PYTHON-SPECIFIC FEATURE: Grazing Incidence Tracking - propagate flags
+                    # =====================================================================
+                    # These will be set by refract() if grazing incidence is detected
+                    output_ray_geom.is_grazing_result__angle = False
+                    output_ray_geom.is_grazing_result__polar = False
+                    output_ray_geom.is_grazing_result__transm = False
+                    output_ray_geom.caused_grazing__angle = False
+                    output_ray_geom.caused_grazing__polar = False
+                    output_ray_geom.caused_grazing__transm = False
+
                     # Track segment index for TIR marking after on_ray_incident returns
                     segment_index = len(self.ray_segments) - 1
 
@@ -296,6 +307,19 @@ class Simulator:
 
                     # Handle different return types and convert back to Ray objects
                     if result is not None:
+                        # =====================================================================
+                        # PYTHON-SPECIFIC FEATURE: Grazing Incidence Tracking
+                        # =====================================================================
+                        # Copy caused_grazing__* flags from output_ray_geom to the incident segment.
+                        # These flags are set by refract() when grazing incidence is detected.
+                        # =====================================================================
+                        if getattr(output_ray_geom, 'caused_grazing__angle', False):
+                            self.ray_segments[segment_index].caused_grazing__angle = True
+                        if getattr(output_ray_geom, 'caused_grazing__polar', False):
+                            self.ray_segments[segment_index].caused_grazing__polar = True
+                        if getattr(output_ray_geom, 'caused_grazing__transm', False):
+                            self.ray_segments[segment_index].caused_grazing__transm = True
+
                         if isinstance(result, dict) and 'newRays' in result:
                             # Dict with newRays list (format from base_glass refract)
                             for new_ray_geom in result['newRays']:
@@ -587,6 +611,22 @@ class Simulator:
             if hasattr(ray_data, 'tir_count'):
                 ray.tir_count = ray_data.tir_count
 
+            # =====================================================================
+            # PYTHON-SPECIFIC FEATURE: Grazing Incidence Tracking - preserve flags
+            # =====================================================================
+            if hasattr(ray_data, 'is_grazing_result__angle'):
+                ray.is_grazing_result__angle = ray_data.is_grazing_result__angle
+            if hasattr(ray_data, 'caused_grazing__angle'):
+                ray.caused_grazing__angle = ray_data.caused_grazing__angle
+            if hasattr(ray_data, 'is_grazing_result__polar'):
+                ray.is_grazing_result__polar = ray_data.is_grazing_result__polar
+            if hasattr(ray_data, 'caused_grazing__polar'):
+                ray.caused_grazing__polar = ray_data.caused_grazing__polar
+            if hasattr(ray_data, 'is_grazing_result__transm'):
+                ray.is_grazing_result__transm = ray_data.is_grazing_result__transm
+            if hasattr(ray_data, 'caused_grazing__transm'):
+                ray.caused_grazing__transm = ray_data.caused_grazing__transm
+
             return ray
 
         # Handle dictionary format
@@ -614,6 +654,22 @@ class Simulator:
                 ray.caused_tir = ray_data['caused_tir']
             if 'tir_count' in ray_data:
                 ray.tir_count = ray_data['tir_count']
+
+            # =====================================================================
+            # PYTHON-SPECIFIC FEATURE: Grazing Incidence Tracking - preserve flags
+            # =====================================================================
+            if 'is_grazing_result__angle' in ray_data:
+                ray.is_grazing_result__angle = ray_data['is_grazing_result__angle']
+            if 'caused_grazing__angle' in ray_data:
+                ray.caused_grazing__angle = ray_data['caused_grazing__angle']
+            if 'is_grazing_result__polar' in ray_data:
+                ray.is_grazing_result__polar = ray_data['is_grazing_result__polar']
+            if 'caused_grazing__polar' in ray_data:
+                ray.caused_grazing__polar = ray_data['caused_grazing__polar']
+            if 'is_grazing_result__transm' in ray_data:
+                ray.is_grazing_result__transm = ray_data['is_grazing_result__transm']
+            if 'caused_grazing__transm' in ray_data:
+                ray.caused_grazing__transm = ray_data['caused_grazing__transm']
 
             return ray
 

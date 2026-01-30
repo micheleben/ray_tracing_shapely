@@ -602,6 +602,49 @@ class BaseGlass(BaseSceneObj):
             R_s = ((n1 * cos1 - cos2) / (n1 * cos1 + cos2)) ** 2
             R_p = ((n1 * cos2 - cos1) / (n1 * cos2 + cos1)) ** 2
 
+            # Transmission coefficients
+            T_s = 1 - R_s
+            T_p = 1 - R_p
+
+            # =====================================================================
+            # PYTHON-SPECIFIC FEATURE: Grazing Incidence Detection
+            # =====================================================================
+            # Detect grazing incidence using three independent criteria.
+            # Grazing incidence occurs near the critical angle where polarization
+            # effects become extreme (useful for Abbe refractometer analysis).
+            # =====================================================================
+            grazing_angle = False
+            grazing_polar = False
+            grazing_transm = False
+
+            # Criterion 1: Angle threshold
+            # Convert cos1 to angle in degrees (cos1 is cosine of incidence angle)
+            incidence_angle_deg = math.degrees(math.acos(abs(cos1)))
+            if incidence_angle_deg >= self.scene.grazing_angle_threshold:
+                grazing_angle = True
+
+            # Criterion 2: Polarization ratio threshold
+            # Check if transmitted p/s ratio exceeds threshold (extreme polarization)
+            # Only meaningful when both have non-zero transmission
+            if T_s > 1e-10:  # Avoid division by zero
+                polar_ratio = T_p / T_s
+                if polar_ratio >= self.scene.grazing_polarization_ratio_threshold:
+                    grazing_polar = True
+
+            # Criterion 3: Transmission ratio threshold
+            # T_ratio = (brightness_s * T_s + brightness_p * T_p) / (brightness_s + brightness_p)
+            # For unpolarized light this simplifies to (T_s + T_p) / 2
+            original_total = ray.brightness_s + ray.brightness_p
+            if original_total > 1e-10:  # Avoid division by zero
+                transmitted_total = ray.brightness_s * T_s + ray.brightness_p * T_p
+                T_ratio = transmitted_total / original_total
+                if T_ratio < self.scene.grazing_transmission_threshold:
+                    grazing_transm = True
+
+            if verbose >= 2 and (grazing_angle or grazing_polar or grazing_transm):
+                print(f"  GRAZING DETECTED: angle={grazing_angle} (angle={incidence_angle_deg:.1f} deg), "
+                      f"polar={grazing_polar}, transm={grazing_transm}")
+
             new_rays = []
             truncation = 0
 
@@ -699,6 +742,22 @@ class BaseGlass(BaseSceneObj):
             ray3.brightness_p = original_brightness_p * (1 - R_p)
             ray3.wavelength = ray.wavelength
             ray3.gap = getattr(ray, 'gap', False)
+
+            # =====================================================================
+            # PYTHON-SPECIFIC FEATURE: Set grazing incidence flags on refracted ray
+            # =====================================================================
+            # Mark the refracted ray as a result of grazing incidence if any
+            # criterion was triggered. Also mark the incoming ray as having caused it.
+            # =====================================================================
+            if grazing_angle:
+                ray3.is_grazing_result__angle = True
+                ray.caused_grazing__angle = True
+            if grazing_polar:
+                ray3.is_grazing_result__polar = True
+                ray.caused_grazing__polar = True
+            if grazing_transm:
+                ray3.is_grazing_result__transm = True
+                ray.caused_grazing__transm = True
 
             if body_merging_obj:
                 ray3.bodyMergingObj = body_merging_obj

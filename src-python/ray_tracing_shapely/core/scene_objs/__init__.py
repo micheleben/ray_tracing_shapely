@@ -27,5 +27,6 @@ from .blocker import Blocker
 from .light_source import PointSource, Beam, SingleRay, AngleSource
 from .glass import IdealLens, Glass, SphericalLens
 from .other import Detector
+from .ground_glass import GroundGlass
 
-__all__ = ['BaseSceneObj', 'ConstructReturn', 'SimulationReturn', 'LineObjMixin', 'CircleObjMixin', 'ParamCurveObjMixin', 'BaseFilter', 'BaseGlass', 'BaseCustomSurface', 'BaseGrinGlass', 'Blocker', 'PointSource', 'Beam', 'SingleRay', 'AngleSource', 'IdealLens', 'Glass', 'SphericalLens', 'Detector']
+__all__ = ['BaseSceneObj', 'ConstructReturn', 'SimulationReturn', 'LineObjMixin', 'CircleObjMixin', 'ParamCurveObjMixin', 'BaseFilter', 'BaseGlass', 'BaseCustomSurface', 'BaseGrinGlass', 'Blocker', 'PointSource', 'Beam', 'SingleRay', 'AngleSource', 'IdealLens', 'Glass', 'SphericalLens', 'Detector', 'GroundGlass']

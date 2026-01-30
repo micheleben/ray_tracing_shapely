@@ -41,6 +41,22 @@ class Ray:
         caused_tir (bool): True if this segment's endpoint caused TIR
         tir_count (int): Cumulative TIR count in this ray's lineage
 
+    Grazing Incidence Tracking Attributes (PYTHON-SPECIFIC FEATURE):
+        Grazing incidence occurs at angles near the critical angle, where
+        polarization effects become extreme. Three independent criteria detect it:
+
+        Angle criterion (near critical angle):
+            is_grazing_result__angle (bool): This segment was produced by grazing refraction
+            caused_grazing__angle (bool): This segment's endpoint triggered angle criterion
+
+        Polarization criterion (extreme s/p ratio after refraction):
+            is_grazing_result__polar (bool): This segment was produced by grazing refraction
+            caused_grazing__polar (bool): This segment's endpoint triggered polar criterion
+
+        Transmission criterion (very low total transmission):
+            is_grazing_result__transm (bool): This segment was produced by grazing refraction
+            caused_grazing__transm (bool): This segment's endpoint triggered transm criterion
+
     Source Tracking Attributes (PYTHON-SPECIFIC FEATURE):
         source_uuid (str or None): UUID of the light source that emitted this ray
         source_label (str or None): Human-readable label for ray identification
@@ -85,6 +101,24 @@ class Ray:
         self.tir_count: int = 0           # Cumulative TIR count in this ray's lineage
 
         # =====================================================================
+        # PYTHON-SPECIFIC FEATURE: Grazing Incidence Tracking
+        # =====================================================================
+        # These attributes enable filtering and analysis of rays that experienced
+        # grazing incidence (near-critical-angle refraction). Three independent
+        # criteria are tracked separately, as different thresholds may apply.
+        # This feature does not exist in the JavaScript version.
+        # =====================================================================
+        # Angle criterion: incidence angle above threshold (e.g., 85°)
+        self.is_grazing_result__angle: bool = False
+        self.caused_grazing__angle: bool = False
+        # Polarization criterion: brightness_p / brightness_s ratio above threshold
+        self.is_grazing_result__polar: bool = False
+        self.caused_grazing__polar: bool = False
+        # Transmission criterion: total transmission below threshold
+        self.is_grazing_result__transm: bool = False
+        self.caused_grazing__transm: bool = False
+
+        # =====================================================================
         # PYTHON-SPECIFIC FEATURE: Source Tracking
         # =====================================================================
         # These attributes enable correlation between rays and their sources,
@@ -114,6 +148,13 @@ class Ray:
         new_ray.is_tir_result = self.is_tir_result
         new_ray.caused_tir = False  # Don't copy - caused_tir is position-specific, set by simulator
         new_ray.tir_count = self.tir_count
+        # PYTHON-SPECIFIC: Copy grazing incidence tracking attributes
+        new_ray.is_grazing_result__angle = self.is_grazing_result__angle
+        new_ray.caused_grazing__angle = False  # Position-specific, set by simulator
+        new_ray.is_grazing_result__polar = self.is_grazing_result__polar
+        new_ray.caused_grazing__polar = False  # Position-specific, set by simulator
+        new_ray.is_grazing_result__transm = self.is_grazing_result__transm
+        new_ray.caused_grazing__transm = False  # Position-specific, set by simulator
         # PYTHON-SPECIFIC: Copy source tracking attributes
         new_ray.source_uuid = self.source_uuid
         new_ray.source_label = self.source_label
@@ -143,6 +184,26 @@ class Ray:
             if self.tir_count > 0:
                 tir_parts.append(f"tir_count={self.tir_count}")
             tir_str = ", " + ", ".join(tir_parts)
+        # PYTHON-SPECIFIC: Include grazing incidence info in repr
+        grazing_str: str = ""
+        grazing_parts = []
+        if self.is_grazing_result__angle or self.caused_grazing__angle:
+            if self.is_grazing_result__angle:
+                grazing_parts.append("grazing_angle")
+            if self.caused_grazing__angle:
+                grazing_parts.append("->grazing_angle")
+        if self.is_grazing_result__polar or self.caused_grazing__polar:
+            if self.is_grazing_result__polar:
+                grazing_parts.append("grazing_polar")
+            if self.caused_grazing__polar:
+                grazing_parts.append("->grazing_polar")
+        if self.is_grazing_result__transm or self.caused_grazing__transm:
+            if self.is_grazing_result__transm:
+                grazing_parts.append("grazing_transm")
+            if self.caused_grazing__transm:
+                grazing_parts.append("->grazing_transm")
+        if grazing_parts:
+            grazing_str = ", " + ", ".join(grazing_parts)
         # PYTHON-SPECIFIC: Include source info in repr
         source_str: str = ""
         if self.source_label:
@@ -152,7 +213,7 @@ class Ray:
         return (f"Ray(p1={self.p1}, p2={self.p2}, "
                 f"brightness=({self.brightness_s:.6f}, {self.brightness_p:.6f}), "
                 f"total={self.total_brightness:.6f}, "
-                f"wavelength={self.wavelength}{gap_str}{tir_str}{source_str})")
+                f"wavelength={self.wavelength}{gap_str}{tir_str}{grazing_str}{source_str})")
 
 
 # Example usage and testing
