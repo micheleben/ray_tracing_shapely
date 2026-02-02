@@ -344,107 +344,98 @@ the output list.
 
 ---
 
-## Phase 2: RayLineage Tracker
+## Phase 2: RayLineage Tracker -- IMPLEMENTED
 
-### New file: `core/ray_lineage.py`
+> **Status**: Complete. RayLineage class created, integrated into Simulator
+> and SimulationResult. Verified with prism + mirror and TIR test scenes.
 
-A lightweight tree structure. NetworkX is optional -- a plain dict
-implementation covers all needed operations without adding a heavy dependency.
-NetworkX can be used as an optional backend for visualization and graph export.
+### Files modified / created
 
-```python
-from __future__ import annotations
-from typing import Optional
-from dataclasses import dataclass, field
+| File | What changed |
+|------|-------------|
+| `core/ray_lineage.py` | **New file.** `RayLineage` class with dict-based tree and optional NetworkX export |
+| `core/simulator.py` | Added `from .ray_lineage import RayLineage`; `self.lineage` attribute; `register()` calls; passed to `run_with_result()` |
+| `analysis/simulation_result.py` | Added `lineage: Optional[RayLineage]` field; wired through `create()` factory |
 
+### `RayLineage` class (`core/ray_lineage.py`)
 
-@dataclass
-class RayLineage:
-    """Tracks parent-child relationships for all ray segments."""
+A plain Python class (not a dataclass) with four internal dicts:
 
-    _parents: dict[str, str | None] = field(default_factory=dict)
-    _children: dict[str, list[str]] = field(default_factory=dict)
-    _segments: dict[str, 'Ray'] = field(default_factory=dict)
-    _interaction_types: dict[str, str] = field(default_factory=dict)
+- `_parents: dict[str, str | None]` -- uuid to parent_uuid
+- `_children: dict[str, list[str]]` -- uuid to list of child uuids
+- `_segments: dict[str, Ray]` -- uuid to Ray object
+- `_interaction_types: dict[str, str]` -- uuid to interaction type
 
-    def register(self, segment: 'Ray') -> None:
-        self._segments[segment.uuid] = segment
-        self._parents[segment.uuid] = segment.parent_uuid
-        self._interaction_types[segment.uuid] = segment.interaction_type
-        if segment.uuid not in self._children:
-            self._children[segment.uuid] = []
-        if segment.parent_uuid:
-            self._children.setdefault(segment.parent_uuid, []).append(segment.uuid)
+**Registration:** `register(segment)` is called once per completed segment.
+It populates all four dicts from the segment's `uuid`, `parent_uuid`, and
+`interaction_type` fields.
 
-    def get_ancestors(self, uuid: str) -> list['Ray']:
-        """Walk up the tree to the source."""
-        result = []
-        current = self._parents.get(uuid)
-        while current is not None:
-            result.append(self._segments[current])
-            current = self._parents.get(current)
-        result.reverse()
-        return result
+**Query API:**
 
-    def get_full_path(self, uuid: str) -> list['Ray']:
-        """Complete chain from source to this segment (inclusive)."""
-        return self.get_ancestors(uuid) + [self._segments[uuid]]
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `get_ancestors(uuid)` | `list[Ray]` | Chain back to source (root-first), excludes self |
+| `get_full_path(uuid)` | `list[Ray]` | Root to self (inclusive) |
+| `get_children(uuid)` | `list[Ray]` | Direct children |
+| `get_descendants(uuid)` | `list[Ray]` | All descendants (BFS order) |
+| `get_siblings(uuid)` | `list[Ray]` | Other children of same parent |
+| `get_roots()` | `list[Ray]` | All source segments |
+| `get_leaves()` | `list[Ray]` | All terminal segments (no children) |
+| `get_subtree_uuids(uuid)` | `set[str]` | All uuids in subtree (inclusive) |
+| `get_tree_depth(uuid)` | `int` | Depth (0 for roots) |
+| `get_segments_by_type(type)` | `list[Ray]` | All segments of given interaction type |
+| `get_segment(uuid)` | `Ray \| None` | Lookup by uuid |
+| `get_lineage_statistics()` | `dict` | Summary stats (counts, max depth, branching) |
+| `to_networkx()` | `nx.DiGraph` | Export (optional, requires networkx installed) |
 
-    def get_children(self, uuid: str) -> list['Ray']:
-        """Direct children of this segment."""
-        return [self._segments[c] for c in self._children.get(uuid, [])]
+**Design decision: register on `ray_segments.append` only.** We register
+when a segment is appended to `ray_segments` (final geometry), not when it
+enters `pending_rays`. This ensures the lineage tracker only contains segments
+with finalized p1/p2 coordinates. Child rays in `pending_rays` will be
+registered when they are processed and become segments themselves. Parent-child
+linkage still works because `parent_uuid` is set at enqueue time and the
+parent is always registered before its children (FIFO processing order).
 
-    def get_descendants(self, uuid: str) -> list['Ray']:
-        """All segments spawned from this one (BFS)."""
-        result = []
-        queue = list(self._children.get(uuid, []))
-        while queue:
-            child = queue.pop(0)
-            result.append(self._segments[child])
-            queue.extend(self._children.get(child, []))
-        return result
+### Simulator integration
 
-    def get_siblings(self, uuid: str) -> list['Ray']:
-        """Other segments from same parent (e.g., reflected + refracted pair)."""
-        parent = self._parents.get(uuid)
-        if parent is None:
-            return []
-        return [self._segments[c] for c in self._children[parent] if c != uuid]
+- `self.lineage = RayLineage()` initialized in `__init__()` and reset in
+  `run()`.
+- `self.lineage.register(ray)` called immediately after each
+  `self.ray_segments.append(ray)` (two call sites: no-intersection path at
+  line 241 and intersection path at line 263).
+- `self.lineage` passed to `SimulationResult.create()` in `run_with_result()`.
 
-    def get_roots(self) -> list['Ray']:
-        """All source segments (no parent)."""
-        return [self._segments[u] for u, p in self._parents.items() if p is None]
+### SimulationResult integration
 
-    def get_subtree_uuids(self, uuid: str) -> set[str]:
-        """All uuids in the subtree rooted at uuid (inclusive)."""
-        result = {uuid}
-        queue = list(self._children.get(uuid, []))
-        while queue:
-            child = queue.pop(0)
-            result.add(child)
-            queue.extend(self._children.get(child, []))
-        return result
+- Added `lineage: Optional[RayLineage] = None` field to the dataclass.
+- Added `lineage` parameter to `create()` factory method.
+- Accessible as `result.lineage` after `run_with_result()`.
 
-    def to_networkx(self) -> 'nx.DiGraph':
-        """Export to NetworkX DiGraph (requires networkx installed)."""
-        import networkx as nx
-        G = nx.DiGraph()
-        for uuid, segment in self._segments.items():
-            G.add_node(uuid, interaction=self._interaction_types.get(uuid, 'unknown'))
-        for uuid, parent in self._parents.items():
-            if parent is not None:
-                G.add_edge(parent, uuid)
-        return G
+### Verification results
+
+**Prism + mirror test:**
+```
+RayLineage(segments=6, roots=1, leaves=3, max_depth=3)
+Interaction counts: {'source': 1, 'reflect': 2, 'refract': 3}
+Branching factor avg: 1.67
+
+Paths to leaves:
+  source -> reflect                          (depth=1)
+  source -> refract -> refract               (depth=2)
+  source -> refract -> reflect -> refract    (depth=3)
 ```
 
-### Integration with `Simulator`
+**TIR test:**
+```
+RayLineage(segments=7, roots=1, leaves=3, max_depth=4)
+Interaction counts: {'source': 1, 'reflect': 2, 'refract': 3, 'tir': 1}
 
-Add a `lineage: RayLineage` attribute to the Simulator. Call
-`self.lineage.register(ray)` at each `ray_segments.append(ray)` and at each
-`pending_rays.append(new_ray)`.
+Path to TIR: source -> refract -> tir
+Descendants of TIR segment: 3 (reflect, refract, refract)
+```
 
-Expose `lineage` on the simulation result so downstream analysis code can
-query it.
+`result.lineage.segment_count == result.segment_count` confirmed in both
+tests.
 
 ---
 

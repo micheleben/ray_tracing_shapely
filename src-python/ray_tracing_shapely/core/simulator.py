@@ -26,6 +26,8 @@ else:
     from .ray import Ray
     from . import geometry
 
+from .ray_lineage import RayLineage
+
 if TYPE_CHECKING:
     from .scene import Scene
     from .scene_objs.base_scene_obj import BaseSceneObj
@@ -78,6 +80,7 @@ class Simulator:
         self.ray_segments: List[Ray] = []
         self.total_undefined_behavior: int = 0
         self.undefined_behavior_objs: List[Tuple['BaseSceneObj', 'BaseSceneObj']] = []
+        self.lineage: RayLineage = RayLineage()
 
     def run(self) -> List[Ray]:
         """
@@ -96,6 +99,7 @@ class Simulator:
         # Note:  most users add rays via on_simulation_start() rather than manually
         self.processed_ray_count = 0
         self.ray_segments = []
+        self.lineage = RayLineage()
         self.total_undefined_behavior = 0
         self.undefined_behavior_objs = []
         self.scene.error = None
@@ -181,6 +185,7 @@ class Simulator:
             total_truncation=0.0,  # TODO: track truncation in simulation
             undefined_behavior_count=self.total_undefined_behavior,
             name=name,
+            lineage=self.lineage,
         )
 
     # =========================================================================
@@ -235,6 +240,7 @@ class Simulator:
             if intersection_info is None:
                 # No intersection - ray continues to p2 (already extended above)
                 self.ray_segments.append(ray)
+                self.lineage.register(ray)
             else:
                 # Unpack intersection info (now includes surface merging data)
                 obj: 'BaseSceneObj' = intersection_info['obj']
@@ -256,6 +262,7 @@ class Simulator:
 
                 # Store the ray segment
                 self.ray_segments.append(ray)
+                self.lineage.register(ray)
 
                 # Let the object handle the incident ray
                 if hasattr(obj, 'on_ray_incident'):

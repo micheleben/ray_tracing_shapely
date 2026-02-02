@@ -35,6 +35,7 @@ from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..core.ray import Ray
+    from ..core.ray_lineage import RayLineage
     from ..core.scene import Scene
 
 
@@ -160,6 +161,9 @@ class SimulationResult:
     warnings: List[str] = field(default_factory=list)
     error: Optional[str] = None
 
+    # Lineage tracking (Python-specific)
+    lineage: Optional['RayLineage'] = None
+
     @classmethod
     def create(
         cls,
@@ -169,7 +173,8 @@ class SimulationResult:
         processed_ray_count: int,
         total_truncation: float = 0.0,
         undefined_behavior_count: int = 0,
-        name: Optional[str] = None
+        name: Optional[str] = None,
+        lineage: Optional['RayLineage'] = None
     ) -> 'SimulationResult':
         """
         Create a SimulationResult from simulation outputs.
@@ -184,6 +189,7 @@ class SimulationResult:
             total_truncation: Sum of truncated brightness (default: 0.0)
             undefined_behavior_count: Count of undefined behaviors (default: 0)
             name: Optional name for this simulation run
+            lineage: Optional RayLineage tracker with parent-child relationships
 
         Returns:
             A new SimulationResult instance
@@ -205,6 +211,7 @@ class SimulationResult:
             undefined_behavior_count=undefined_behavior_count,
             warnings=warnings,
             error=scene.error,
+            lineage=lineage,
         )
 
     def get_display_name(self) -> str:
