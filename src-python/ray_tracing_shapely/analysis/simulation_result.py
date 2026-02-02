@@ -757,7 +757,17 @@ def _describe_result_xml(
             p2_x = seg.p2['x'] if isinstance(seg.p2, dict) else seg.p2.x
             p2_y = seg.p2['y'] if isinstance(seg.p2, dict) else seg.p2.y
 
-            lines.append(f'    <segment index="{i}" brightness="{brightness:.4f}"{tir_attrs}{grazing_attrs}{label_attr}>')
+            # Add polarization attributes
+            polar_ratio = getattr(seg, 'polarization_ratio', None)
+            dop = getattr(seg, 'degree_of_polarization', None)
+            polar_attrs = ""
+            if polar_ratio is not None:
+                pr_str = "inf" if polar_ratio == float('inf') else f"{polar_ratio:.4f}"
+                polar_attrs += f' polar_ratio="{pr_str}"'
+            if dop is not None:
+                polar_attrs += f' dop="{dop:.4f}"'
+
+            lines.append(f'    <segment index="{i}" brightness="{brightness:.4f}"{tir_attrs}{grazing_attrs}{polar_attrs}{label_attr}>')
             lines.append(f'      <p1 x="{p1_x:.4f}" y="{p1_y:.4f}"/>')
             lines.append(f'      <p2 x="{p2_x:.4f}" y="{p2_y:.4f}"/>')
             if seg.wavelength is not None:

@@ -170,6 +170,38 @@ class Ray:
         """
         return self.brightness_s + self.brightness_p
 
+    # =========================================================================
+    # PYTHON-SPECIFIC FEATURE: Polarization Metrics
+    # =========================================================================
+
+    @property
+    def polarization_ratio(self) -> float:
+        """
+        Ratio of p-polarized to s-polarized brightness.
+
+        Returns:
+            float: brightness_p / brightness_s, or float('inf') if brightness_s
+                   is negligible (< 1e-10).
+        """
+        if self.brightness_s > 1e-10:
+            return self.brightness_p / self.brightness_s
+        return float('inf')
+
+    @property
+    def degree_of_polarization(self) -> float:
+        """
+        Degree of polarization (0 = unpolarized, 1 = fully polarized).
+
+        Computed as |brightness_p - brightness_s| / (brightness_p + brightness_s).
+
+        Returns:
+            float: Value in [0, 1], or 0.0 if total brightness is negligible.
+        """
+        total = self.brightness_p + self.brightness_s
+        if total > 1e-10:
+            return abs(self.brightness_p - self.brightness_s) / total
+        return 0.0
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         gap_str: str = ", gap=True" if self.gap else ""
