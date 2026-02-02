@@ -15,6 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import uuid as _uuid_mod
 from typing import Dict, Optional, Any
 
 
@@ -61,6 +62,15 @@ class Ray:
         source_uuid (str or None): UUID of the light source that emitted this ray
         source_label (str or None): Human-readable label for ray identification
             (e.g., "red", "green", "blue", "chief", "marginal_upper")
+
+    Lineage Tracking Attributes (PYTHON-SPECIFIC FEATURE):
+        uuid (str): Unique identifier for this ray segment (auto-generated)
+        parent_uuid (str or None): UUID of the parent ray that spawned this one
+        interaction_type (str): How this ray was created:
+            'source' = emitted by a light source (no parent)
+            'reflect' = Fresnel reflection or mirror reflection
+            'refract' = Snell's law refraction
+            'tir' = total internal reflection
     """
 
     def __init__(
@@ -127,6 +137,17 @@ class Ray:
         self.source_uuid: Optional[str] = None   # UUID of the emitting light source
         self.source_label: Optional[str] = None  # Human-readable label (e.g., "red", "chief")
 
+        # =====================================================================
+        # PYTHON-SPECIFIC FEATURE: Ray Lineage Tracking
+        # =====================================================================
+        # These attributes enable reconstruction of the full ray tree after
+        # simulation, tracking parent-child relationships across reflections,
+        # refractions, and TIR events.
+        # =====================================================================
+        self.uuid: str = str(_uuid_mod.uuid4())   # Unique ID for this ray segment
+        self.parent_uuid: Optional[str] = None     # UUID of the parent ray (None for source rays)
+        self.interaction_type: str = 'source'      # 'source', 'reflect', 'refract', 'tir'
+
     def copy(self) -> 'Ray':
         """
         Create a copy of this ray.
@@ -158,6 +179,11 @@ class Ray:
         # PYTHON-SPECIFIC: Copy source tracking attributes
         new_ray.source_uuid = self.source_uuid
         new_ray.source_label = self.source_label
+        # PYTHON-SPECIFIC: Copy lineage tracking attributes
+        # copy() generates a NEW uuid (it's a new segment), but preserves lineage info
+        # Caller is responsible for setting parent_uuid if this copy is a child ray
+        new_ray.parent_uuid = self.parent_uuid
+        new_ray.interaction_type = self.interaction_type
         return new_ray
 
     @property
@@ -244,10 +270,16 @@ class Ray:
             source_str = f", label='{self.source_label}'"
         elif self.source_uuid:
             source_str = f", source={self.source_uuid[:8]}..."
+        # PYTHON-SPECIFIC: Include lineage info in repr
+        lineage_str: str = f", uuid={self.uuid[:8]}..."
+        if self.parent_uuid:
+            lineage_str += f", parent={self.parent_uuid[:8]}..."
+        if self.interaction_type != 'source':
+            lineage_str += f", {self.interaction_type}"
         return (f"Ray(p1={self.p1}, p2={self.p2}, "
                 f"brightness=({self.brightness_s:.6f}, {self.brightness_p:.6f}), "
                 f"total={self.total_brightness:.6f}, "
-                f"wavelength={self.wavelength}{gap_str}{tir_str}{grazing_str}{source_str})")
+                f"wavelength={self.wavelength}{gap_str}{tir_str}{grazing_str}{source_str}{lineage_str})")
 
 
 # Example usage and testing

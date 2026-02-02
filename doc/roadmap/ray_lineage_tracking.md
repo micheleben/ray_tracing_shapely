@@ -211,61 +211,136 @@ code for uuid propagation.
 
 ---
 
-## Phase 1: Ray Lineage Fields
+## Phase 1: Ray Lineage Fields -- IMPLEMENTED
+
+> **Status**: Complete. All changes verified with prism + mirror and TIR test
+> scenes. Zero orphans (every `parent_uuid` resolves to a segment in the
+> output).
+
+### Files modified
+
+| File | What changed |
+|------|-------------|
+| `core/ray.py` | Added `import uuid`; 3 new fields in `__init__`; updated `copy()` and `__repr__()` |
+| `core/scene_objs/base_glass.py` | Tagged `ray2` with `interaction_type='reflect'`, `ray3` with `interaction_type='refract'` |
+| `core/simulator.py` | Propagation in `_dict_to_ray()`; parent/type assignment in all 4 branches of `_process_rays()` |
 
 ### Changes to `Ray.__init__()` in `ray.py`
 
-Add three fields:
+Three new fields added after the source tracking block (lines 130-139):
 
 ```python
 import uuid as _uuid_mod
 
 # in __init__:
-self.uuid: str = str(_uuid_mod.uuid4())
-self.parent_uuid: Optional[str] = None
-self.interaction_type: str = 'source'  # 'source', 'reflect', 'refract', 'tir'
+self.uuid: str = str(_uuid_mod.uuid4())   # Unique ID for this ray segment
+self.parent_uuid: Optional[str] = None     # UUID of the parent ray (None for source rays)
+self.interaction_type: str = 'source'      # 'source', 'reflect', 'refract', 'tir'
 ```
 
 ### Changes to `Ray.copy()`
 
+`copy()` generates a **new uuid** (via `Ray.__init__`) since the copy is a
+distinct segment. `parent_uuid` and `interaction_type` are copied from the
+original. The caller (i.e. the simulator) is responsible for overriding
+`parent_uuid` if the copy represents a child ray.
+
 ```python
-# uuid gets a NEW value (copy is a new segment)
-new_ray.uuid = str(_uuid_mod.uuid4())
-# parent_uuid is copied (same parent as original, caller may override)
 new_ray.parent_uuid = self.parent_uuid
 new_ray.interaction_type = self.interaction_type
 ```
 
+### Changes to `Ray.__repr__()`
+
+Added a `lineage_str` block that shows:
+- Truncated uuid (first 8 chars) -- always shown
+- Truncated parent_uuid -- shown only if not None
+- `interaction_type` -- shown only if not `'source'` (to reduce noise)
+
+Example output:
+```
+Ray(..., uuid=7e7befa6..., parent=47a32355..., reflect)
+```
+
+### Changes to `BaseGlass.refract()` in `base_glass.py`
+
+The physics code creates `ray2` (Fresnel reflection) and `ray3` (refracted
+ray) as `geometry.line()` objects. These lightweight objects accept arbitrary
+attributes, so we tag them directly:
+
+- `ray2.interaction_type = 'reflect'` (after line 668)
+- `ray3.interaction_type = 'refract'` (after line 745)
+
+This avoids needing heuristics in the simulator to distinguish reflected from
+refracted rays in the `newRays` list. The tag flows through `_dict_to_ray()`
+automatically.
+
+Note: `parent_uuid` is **not** set here because `geometry.line()` objects
+don't carry uuids. Parent assignment happens at the simulator level.
+
 ### Changes to `_dict_to_ray()` in `simulator.py`
 
-Add `hasattr`/`getattr` propagation for `uuid`, `parent_uuid`,
-`interaction_type` in both the object-attribute path and the dict path, same
-pattern as existing TIR/grazing fields.
+Added `hasattr`/`getattr` propagation for `uuid`, `parent_uuid`,
+`interaction_type` in both code paths (object-attribute and dict), following
+the same pattern used for TIR and grazing flags. When a geometry object
+carries `interaction_type` (set by `refract()`), it flows through to the new
+`Ray` instance.
 
 ### Changes to `_process_rays()` in `simulator.py`
 
-After each `_dict_to_ray()` conversion, set `parent_uuid` and
-`interaction_type` on the new ray:
+After each `_dict_to_ray()` conversion, `parent_uuid` is set to the parent
+ray's uuid. The `interaction_type` assignment depends on the branch:
 
-- **BRANCH A** (newRays from refract, line 323): these are Fresnel reflections.
-  Set `new_ray.parent_uuid = ray.uuid`, `new_ray.interaction_type = 'reflect'`.
-- **BRANCH B** (list, line 331): same as BRANCH A (context-dependent).
-- **BRANCH C** (single ray, line 339): set based on object type.
-- **BRANCH D** (in-place / None return, line 346):
-  - If `is_tir_result`: `interaction_type = 'tir'`
-  - If from mirror: `interaction_type = 'reflect'`
-  - Otherwise: `interaction_type = 'refract'`
-  - Set `new_ray.parent_uuid = ray.uuid`
+- **BRANCH A** (`result` is dict with `newRays`, from `refract()`):
+  `interaction_type` is already set on the geometry objects by `refract()`
+  (`'reflect'` for `ray2`, `'refract'` for `ray3`). The simulator sets
+  `new_ray.parent_uuid = ray.uuid`.
 
-For the refracted continuation (BRANCH D when refract returns non-None but
-modifies the input), the modified input ray goes through BRANCH D. Set
-`parent_uuid = ray.uuid`.
+- **BRANCH B** (`result` is a list): same as BRANCH A. Sets
+  `new_ray.parent_uuid = ray.uuid`.
 
-### Changes to light sources
+- **BRANCH C** (`result` is a single ray): sets
+  `new_ray.parent_uuid = ray.uuid`.
 
-In `on_simulation_start()`, each created ray already gets a new `Ray()` which
-will auto-generate a uuid. Set `interaction_type = 'source'` (the default).
-`parent_uuid` stays `None`.
+- **BRANCH D** (`result` is None, in-place modification): the simulator
+  determines `interaction_type` from context:
+  - If `output_ray_geom.is_tir_result` is True: `interaction_type = 'tir'`
+  - Otherwise (mirror reflection): `interaction_type = 'reflect'`
+  - Sets `new_ray.parent_uuid = ray.uuid`
+
+### Light sources -- no changes needed
+
+Source rays are created as `geometry.line()` objects in `on_simulation_start()`
+and converted to `Ray` objects by `_dict_to_ray()` in `Simulator.run()`.
+The `Ray.__init__()` constructor auto-generates a uuid and defaults to
+`parent_uuid=None`, `interaction_type='source'` -- exactly correct for root
+rays. No light source code was modified.
+
+### Verification results
+
+**Prism + mirror test** (6 segments):
+```
+uuid=7e7befa6... ROOT        type=source   brightness=1.000000
+uuid=79cfd24f... parent=7e.. type=reflect  brightness=0.042479  (Fresnel at prism entry)
+uuid=47a32355... parent=7e.. type=refract  brightness=0.957521  (into prism)
+uuid=231211e5... parent=47.. type=reflect  brightness=0.148086  (Fresnel at prism exit)
+uuid=d9c6c279... parent=47.. type=refract  brightness=0.809435  (out of prism)
+uuid=44201116... parent=23.. type=refract  brightness=0.139403  (Fresnel reflection re-exits)
+```
+
+**TIR test** (7 segments):
+```
+uuid=52b11409... ROOT        type=source   tir_count=0
+uuid=dd4d4010... parent=52.. type=reflect  tir_count=0  (Fresnel at entry)
+uuid=06276200... parent=52.. type=refract  tir_count=0  (into glass)
+uuid=0c40b21f... parent=06.. type=tir      tir_count=1  (TIR at steep surface)
+uuid=9a3009a6... parent=0c.. type=reflect  tir_count=1  (Fresnel at next surface)
+uuid=15938107... parent=0c.. type=refract  tir_count=1  (exits glass)
+uuid=a0d0807f... parent=9a.. type=refract  tir_count=1  (Fresnel reflection re-exits)
+```
+
+Zero orphans in both tests: every `parent_uuid` resolves to a segment uuid in
+the output list.
 
 ---
 

@@ -322,11 +322,15 @@ class Simulator:
 
                         if isinstance(result, dict) and 'newRays' in result:
                             # Dict with newRays list (format from base_glass refract)
+                            # newRays contains reflected and/or refracted rays,
+                            # each tagged with interaction_type by refract()
                             for new_ray_geom in result['newRays']:
                                 new_ray = self._dict_to_ray(new_ray_geom)
                                 if new_ray and new_ray.total_brightness > 1e-6:
                                     # PYTHON-SPECIFIC: Propagate tir_count to new rays
                                     new_ray.tir_count = getattr(ray, 'tir_count', 0)
+                                    # PYTHON-SPECIFIC: Set lineage parent
+                                    new_ray.parent_uuid = ray.uuid
                                     self.pending_rays.append(new_ray)
                         elif isinstance(result, list):
                             # Multiple output rays (e.g., beam splitter)
@@ -335,6 +339,8 @@ class Simulator:
                                 if new_ray and new_ray.total_brightness > 1e-6:
                                     # PYTHON-SPECIFIC: Propagate tir_count to new rays
                                     new_ray.tir_count = getattr(ray, 'tir_count', 0)
+                                    # PYTHON-SPECIFIC: Set lineage parent
+                                    new_ray.parent_uuid = ray.uuid
                                     self.pending_rays.append(new_ray)
                         else:
                             # Single output ray
@@ -342,6 +348,8 @@ class Simulator:
                             if new_ray and new_ray.total_brightness > 1e-6:
                                 # PYTHON-SPECIFIC: Propagate tir_count to new rays
                                 new_ray.tir_count = getattr(ray, 'tir_count', 0)
+                                # PYTHON-SPECIFIC: Set lineage parent
+                                new_ray.parent_uuid = ray.uuid
                                 self.pending_rays.append(new_ray)
                     else:
                         # Object modified the ray in-place (TIR or other in-place modification)
@@ -358,6 +366,13 @@ class Simulator:
                                 # Copy TIR flags to the new ray
                                 new_ray.is_tir_result = True
                                 new_ray.tir_count = getattr(output_ray_geom, 'tir_count', 0)
+                                # PYTHON-SPECIFIC: Set lineage for TIR
+                                new_ray.interaction_type = 'tir'
+                            else:
+                                # In-place modification without TIR (e.g., mirror reflection)
+                                new_ray.interaction_type = 'reflect'
+                            # PYTHON-SPECIFIC: Set lineage parent
+                            new_ray.parent_uuid = ray.uuid
                             self.pending_rays.append(new_ray)
                     # If brightness is zero or None returned, ray is absorbed
 
@@ -627,6 +642,16 @@ class Simulator:
             if hasattr(ray_data, 'caused_grazing__transm'):
                 ray.caused_grazing__transm = ray_data.caused_grazing__transm
 
+            # =====================================================================
+            # PYTHON-SPECIFIC FEATURE: Ray Lineage Tracking - preserve attributes
+            # =====================================================================
+            if hasattr(ray_data, 'uuid'):
+                ray.uuid = ray_data.uuid
+            if hasattr(ray_data, 'parent_uuid'):
+                ray.parent_uuid = ray_data.parent_uuid
+            if hasattr(ray_data, 'interaction_type'):
+                ray.interaction_type = ray_data.interaction_type
+
             return ray
 
         # Handle dictionary format
@@ -670,6 +695,16 @@ class Simulator:
                 ray.is_grazing_result__transm = ray_data['is_grazing_result__transm']
             if 'caused_grazing__transm' in ray_data:
                 ray.caused_grazing__transm = ray_data['caused_grazing__transm']
+
+            # =====================================================================
+            # PYTHON-SPECIFIC FEATURE: Ray Lineage Tracking - preserve attributes
+            # =====================================================================
+            if 'uuid' in ray_data:
+                ray.uuid = ray_data['uuid']
+            if 'parent_uuid' in ray_data:
+                ray.parent_uuid = ray_data['parent_uuid']
+            if 'interaction_type' in ray_data:
+                ray.interaction_type = ray_data['interaction_type']
 
             return ray
 

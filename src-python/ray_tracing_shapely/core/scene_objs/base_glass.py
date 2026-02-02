@@ -665,6 +665,7 @@ class BaseGlass(BaseSceneObj):
             ray2.brightness_p = original_brightness_p * R_p
             ray2.wavelength = ray.wavelength
             ray2.gap = getattr(ray, 'gap', False)
+            ray2.interaction_type = 'reflect'
 
             if body_merging_obj:
                 ray2.bodyMergingObj = body_merging_obj
@@ -742,6 +743,7 @@ class BaseGlass(BaseSceneObj):
             ray3.brightness_p = original_brightness_p * (1 - R_p)
             ray3.wavelength = ray.wavelength
             ray3.gap = getattr(ray, 'gap', False)
+            ray3.interaction_type = 'refract'
 
             # =====================================================================
             # PYTHON-SPECIFIC FEATURE: Set grazing incidence flags on refracted ray
