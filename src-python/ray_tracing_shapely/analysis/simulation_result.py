@@ -98,6 +98,9 @@ class SceneSnapshot:
             'ray_density': scene.ray_density,
             'length_scale': scene.length_scale,
             'min_brightness_exp': scene.min_brightness_exp,
+            'grazing_angle_threshold': scene.grazing_angle_threshold,
+            'grazing_polarization_ratio_threshold': scene.grazing_polarization_ratio_threshold,
+            'grazing_transmission_threshold': scene.grazing_transmission_threshold,
         }
 
         return cls(
