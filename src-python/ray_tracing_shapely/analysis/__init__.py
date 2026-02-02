@@ -45,6 +45,7 @@ from .glass_geometry import (
 )
 from .saving import (
     save_rays_csv,
+    rays_to_xml,
     filter_tir_rays,
     filter_grazing_rays,
     get_ray_statistics,
@@ -69,6 +70,7 @@ __all__ = [
     'describe_edges',
     # Ray data export and statistics
     'save_rays_csv',
+    'rays_to_xml',
     'filter_tir_rays',
     'filter_grazing_rays',
     'get_ray_statistics',

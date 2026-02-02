@@ -139,6 +139,142 @@ def save_rays_csv(
     return csv_file
 
 
+def _escape_xml(text) -> str:
+    """Escape special characters for XML."""
+    if text is None:
+        return ""
+    return (str(text)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;"))
+
+
+def rays_to_xml(
+    ray_segments: List[Ray],
+    precision_coords: int = 4,
+    precision_brightness: int = 6,
+) -> str:
+    """
+    Export ray segment data to an XML string.
+
+    Produces a complete XML document containing every property of each ray
+    segment: geometry, brightness (both polarizations), polarization metrics,
+    wavelength, gap/new flags, TIR tracking, grazing incidence tracking, and
+    source tracking.
+
+    Args:
+        ray_segments: List of Ray objects to export.
+        precision_coords: Decimal places for coordinate values (default: 4).
+        precision_brightness: Decimal places for brightness values (default: 6).
+
+    Returns:
+        str: XML string with all ray data.
+
+    Example:
+        >>> from ray_tracing_shapely.analysis import rays_to_xml
+        >>> xml = rays_to_xml(ray_segments)
+        >>> print(xml)
+    """
+    coord_fmt = f"{{:.{precision_coords}f}}"
+    bright_fmt = f"{{:.{precision_brightness}f}}"
+
+    lines: List[str] = []
+    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+    lines.append(f'<rays count="{len(ray_segments)}">')
+
+    for i, ray in enumerate(ray_segments):
+        # Handle both dict and Point objects for p1/p2
+        p1_x = ray.p1['x'] if isinstance(ray.p1, dict) else ray.p1.x
+        p1_y = ray.p1['y'] if isinstance(ray.p1, dict) else ray.p1.y
+        p2_x = ray.p2['x'] if isinstance(ray.p2, dict) else ray.p2.x
+        p2_y = ray.p2['y'] if isinstance(ray.p2, dict) else ray.p2.y
+
+        dx = p2_x - p1_x
+        dy = p2_y - p1_y
+        length = math.sqrt(dx * dx + dy * dy)
+
+        lines.append(f'  <ray index="{i}">')
+
+        # Geometry
+        lines.append(f'    <p1 x="{coord_fmt.format(p1_x)}" y="{coord_fmt.format(p1_y)}"/>')
+        lines.append(f'    <p2 x="{coord_fmt.format(p2_x)}" y="{coord_fmt.format(p2_y)}"/>')
+        lines.append(f'    <length>{coord_fmt.format(length)}</length>')
+
+        # Brightness
+        lines.append(f'    <brightness_s>{bright_fmt.format(ray.brightness_s)}</brightness_s>')
+        lines.append(f'    <brightness_p>{bright_fmt.format(ray.brightness_p)}</brightness_p>')
+        lines.append(f'    <brightness_total>{bright_fmt.format(ray.total_brightness)}</brightness_total>')
+
+        # Polarization metrics
+        polar_ratio = ray.polarization_ratio
+        pr_str = "inf" if polar_ratio == float('inf') else bright_fmt.format(polar_ratio)
+        lines.append(f'    <polarization_ratio>{pr_str}</polarization_ratio>')
+        lines.append(f'    <degree_of_polarization>{bright_fmt.format(ray.degree_of_polarization)}</degree_of_polarization>')
+
+        # Wavelength
+        if ray.wavelength is not None:
+            lines.append(f'    <wavelength>{ray.wavelength}</wavelength>')
+
+        # Flags
+        if ray.gap:
+            lines.append('    <gap>true</gap>')
+        if ray.is_new:
+            lines.append('    <is_new>true</is_new>')
+
+        # TIR tracking
+        if ray.is_tir_result or ray.caused_tir or ray.tir_count > 0:
+            lines.append('    <tir>')
+            if ray.is_tir_result:
+                lines.append('      <is_tir_result>true</is_tir_result>')
+            if ray.caused_tir:
+                lines.append('      <caused_tir>true</caused_tir>')
+            if ray.tir_count > 0:
+                lines.append(f'      <tir_count>{ray.tir_count}</tir_count>')
+            lines.append('    </tir>')
+
+        # Grazing incidence tracking
+        ga = getattr(ray, 'is_grazing_result__angle', False)
+        ca = getattr(ray, 'caused_grazing__angle', False)
+        gp = getattr(ray, 'is_grazing_result__polar', False)
+        cp = getattr(ray, 'caused_grazing__polar', False)
+        gt = getattr(ray, 'is_grazing_result__transm', False)
+        ct = getattr(ray, 'caused_grazing__transm', False)
+        if ga or ca or gp or cp or gt or ct:
+            lines.append('    <grazing>')
+            if ga:
+                lines.append('      <is_grazing_result__angle>true</is_grazing_result__angle>')
+            if ca:
+                lines.append('      <caused_grazing__angle>true</caused_grazing__angle>')
+            if gp:
+                lines.append('      <is_grazing_result__polar>true</is_grazing_result__polar>')
+            if cp:
+                lines.append('      <caused_grazing__polar>true</caused_grazing__polar>')
+            if gt:
+                lines.append('      <is_grazing_result__transm>true</is_grazing_result__transm>')
+            if ct:
+                lines.append('      <caused_grazing__transm>true</caused_grazing__transm>')
+            lines.append('    </grazing>')
+
+        # Source tracking
+        source_uuid = getattr(ray, 'source_uuid', None)
+        source_label = getattr(ray, 'source_label', None)
+        if source_uuid or source_label:
+            lines.append('    <source>')
+            if source_uuid:
+                lines.append(f'      <uuid>{_escape_xml(source_uuid)}</uuid>')
+            if source_label:
+                lines.append(f'      <label>{_escape_xml(source_label)}</label>')
+            lines.append('    </source>')
+
+        lines.append('  </ray>')
+
+    lines.append('</rays>')
+
+    return "\n".join(lines)
+
+
 def filter_tir_rays(ray_segments: List[Ray], tir_only: bool = True) -> List[Ray]:
     """
     Filter rays based on TIR (Total Internal Reflection) status.

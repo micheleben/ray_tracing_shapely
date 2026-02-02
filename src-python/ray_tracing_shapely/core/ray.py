@@ -177,7 +177,9 @@ class Ray:
     @property
     def polarization_ratio(self) -> float:
         """
-        Ratio of p-polarized to s-polarized brightness.
+        Ratio of p-polarized to s-polarized brightness, T_p/T_s.
+        At grazing incidence p-pol transmits more than s-pol so this ratio is > 1
+        
 
         Returns:
             float: brightness_p / brightness_s, or float('inf') if brightness_s
