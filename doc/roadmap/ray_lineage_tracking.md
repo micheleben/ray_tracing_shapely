@@ -439,45 +439,92 @@ tests.
 
 ---
 
-## Phase 3: Post-hoc Path Analysis
+## Phase 3: Post-hoc Path Analysis -- IMPLEMENTED
 
-With lineage in place, implement analysis utilities:
+> **Status**: Complete. Six analysis functions created in a new module.
+> Verified with prism + mirror, TIR, and point source + prism test scenes.
 
-### Energy path ranking
+### Files created
 
-For each terminal segment (no children, or hits detector), compute cumulative
-brightness along its full path. Rank paths by energy delivered to detector.
+| File | What changed |
+|------|-------------|
+| `analysis/lineage_analysis.py` | **New file.** Six analysis functions operating on `RayLineage` |
 
-```python
-def rank_detector_paths(lineage: RayLineage, detector_uuids: set[str]) -> list:
-    """Rank paths by energy delivered to detector."""
-    paths = []
-    for uuid in detector_uuids:
-        path = lineage.get_full_path(uuid)
-        terminal = path[-1]
-        energy = terminal.brightness_s + terminal.brightness_p
-        paths.append((energy, path))
-    paths.sort(key=lambda x: x[0], reverse=True)
-    return paths
+### Analysis functions (`analysis/lineage_analysis.py`)
+
+All functions take a `RayLineage` (and optionally parameters) as input and
+return plain dicts/lists with no side effects.
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `rank_paths_by_energy(lineage, leaf_uuids=None)` | `list[dict]` | Ranks leaf paths by terminal brightness (highest first). Each entry includes uuid, energy (total/s/p), path length, path interaction types, and full path objects. |
+| `get_branching_statistics(lineage)` | `dict` | Analyzes ray tree structure: total segments, roots, leaves, internal nodes, splits (2+ children) vs single-path (1 child), max children, energy budget by interaction type, and detailed split info. |
+| `detect_tir_traps(lineage, min_tir_count=2)` | `list[dict]` | Finds consecutive TIR chains by walking backward to chain start then forward. Reports chain length, escape status, exit interaction type, and energy at entry/exit. |
+| `extract_angular_distribution(lineage, leaf_uuids=None)` | `list[dict]` | For each leaf, traces back to source and computes emission angle (atan2 of root segment direction). Reports angle in rad/deg, source point, leaf energy, path length. |
+| `build_angular_histogram(angular_data, n_bins=36, weight_by_energy=True)` | `dict` | Bins angular distribution data into a histogram. Reports bin edges/centers, counts (energy-weighted or unweighted), total, peak bin and value. |
+| `check_energy_conservation(lineage)` | `dict` | Verifies child brightness ≤ parent brightness at each branch point (with 1e-6 relative tolerance). Reports violations with parent/child energies and excess ratio. |
+
+### Design notes
+
+- **Leaf-based analysis**: `rank_paths_by_energy` and `extract_angular_distribution`
+  accept an optional `leaf_uuids` parameter for filtering to specific terminal
+  segments (e.g., rays reaching a detector). When `None`, all leaves are used.
+
+- **TIR chain detection**: `detect_tir_traps` walks backward from each TIR
+  segment to find the chain start (first non-TIR parent), then forward to build
+  the full chain. A `visited` set prevents re-reporting the same chain. Chains
+  shorter than `min_tir_count` are skipped.
+
+- **Angular histogram**: Uses fixed-width bins spanning [-180°, +180°]. Default
+  is 36 bins (10° each). Energy weighting emphasizes directions where bright
+  rays escape — useful for importance sampling in future phases.
+
+### Verification results
+
+**Prism + mirror test** (6 segments):
+```
+Energy ranking (3 leaves):
+  #1: energy=0.809435 path=[source -> refract -> refract] (main beam exits prism)
+  #2: energy=0.139403 path=[source -> refract -> reflect -> refract] (internal Fresnel re-exits)
+  #3: energy=0.042479 path=[source -> reflect] (Fresnel at prism entry)
+
+Branching stats: 2 splits, 1 single_path, max_children=2
+Energy budget: source=2.000000, reflect=0.230562, refract=1.906359
+
+Energy conservation: PASSED (0 violations)
 ```
 
-### Branching statistics per surface
+**TIR test** (7 segments):
+```
+TIR trap detection: 1 trap found
+  Chain length: 1 (min_tir_count=1 used for testing)
+  Escaped: True, exit_type=reflect
 
-For each optical object, count how many rays split (refract + reflect) vs
-single-path (TIR, mirror). Identify objects that cause the most ray
-proliferation -- useful for ray budget management.
+Energy ranking (3 leaves):
+  #1: source -> refract -> tir -> refract (main beam after TIR)
+  #2: source -> refract -> tir -> reflect -> refract (Fresnel after TIR)
+  #3: source -> reflect (Fresnel at entry)
 
-### TIR trap detection
+Energy conservation: PASSED (0 violations)
+```
 
-Find subtrees where `tir_count` grows above a threshold. These indicate
-geometries where rays bounce internally many times. Graph depth per subtree
-identifies light traps.
+**Point source + prism test** (multi-ray scene, ~200+ segments):
+```
+Energy conservation: VIOLATIONS DETECTED (~5-7% excess at some branch points)
+```
 
-### Angular importance distribution
+### Known caveat: adaptive ray sampling and energy conservation
 
-For rays that reach a detector, trace back to source and record the source
-emission angle. Build a histogram. This becomes the importance distribution
-for a refined run.
+`check_energy_conservation()` reports violations in scenes that use adaptive
+ray sampling (implemented in `base_glass.py` lines 690-703). The adaptive
+sampling amplifies dim Fresnel reflections to keep them visible, which means
+`child_energy_sum > parent_energy` at those branch points. This is expected
+and intentional — it's a visualization aid, not a physics error.
+
+Single-ray tests (where no adaptive sampling occurs) pass with zero violations.
+The `check_energy_conservation()` function is still useful as a diagnostic: any
+violation with `excess_ratio >> 1.1` likely indicates a real bug, while ratios
+in the 1.01-1.07 range are characteristic of adaptive sampling.
 
 ---
 
