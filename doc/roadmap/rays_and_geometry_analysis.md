@@ -60,6 +60,10 @@ def get_objects_by_type(scene: Scene, type_name: str) -> List[BaseSceneObj]:
 
 These should live as standalone functions in the new `ray_geometry_queries.py` module (not as methods on Scene) to avoid modifying core code and keep the analysis module self-contained.
 
+> **Implementation status: DONE**
+> Implemented in `analysis/ray_geometry_queries.py` and exported via `analysis/__init__.py`.
+> All three functions follow the signatures above. `get_object_by_uuid` supports both exact and prefix matching. `get_objects_by_type` falls back to `__class__.__name__` if no class-level `type` attribute is present.
+
 ---
 
 ## Phase 1: Custom query functions (recommended for agents)
@@ -151,6 +155,21 @@ def find_rays_crossing_edge(
   ```
 
 - **Consider adding crossing direction to `find_rays_crossing_edge`**: returning a list of `(Ray, str)` tuples where the string is `'entering'` or `'exiting'` would be useful. This can be computed by checking whether the dot product of the ray direction and the edge outward normal is positive (entering) or negative (exiting). Alternatively, keep the simple `List[Ray]` signature and offer a separate `classify_crossing_direction()` function.
+
+> **Implementation status: DONE**
+> Implemented in `analysis/ray_geometry_queries.py` and exported via `analysis/__init__.py`.
+>
+> **Internal helpers added** (not exported, prefixed with `_`):
+> - `_resolve_edge(glass, edge_label)` — multi-strategy matching: short_label → long_label → numeric index string. Raises `ValueError` with list of available labels on miss.
+> - `_edge_to_linestring(edge)` — converts `EdgeDescription` to Shapely `LineString`.
+> - `_edge_outward_normal(edge, glass)` — computes unit normal pointing away from glass centroid. Uses dot product between candidate normal and midpoint-to-centroid vector to pick the outward direction.
+> - `_ray_endpoints(ray)` — handles the dual `dict` / Shapely `Point` representation of `ray.p1` and `ray.p2`.
+>
+> **Design decisions**:
+> - `find_rays_inside_glass` uses `Polygon.contains(midpoint)`, not intersection. This means segments that straddle a boundary are only included if their midpoint is interior.
+> - `find_rays_crossing_edge` uses `LineString.intersects()` between ray segment and edge. Returns `List[Ray]` (not tuples with direction). Crossing direction classification deferred to a future helper.
+> - `find_rays_by_angle_to_edge` uses absolute dot product between ray direction and edge outward normal, so the angle is always in [0°, 90°] regardless of ray travel direction. Default proximity filter is 2× edge length.
+> - `find_rays_by_polarization` is a pure filter using `Ray.degree_of_polarization`.
 
 ---
 

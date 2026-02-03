@@ -55,6 +55,17 @@ from .simulation_result import (
     SimulationResult,
     describe_simulation_result,
 )
+from .ray_geometry_queries import (
+    # Phase 0: Scene object lookup
+    get_object_by_name,
+    get_object_by_uuid,
+    get_objects_by_type,
+    # Phase 1: Ray-geometry queries
+    find_rays_inside_glass,
+    find_rays_crossing_edge,
+    find_rays_by_angle_to_edge,
+    find_rays_by_polarization,
+)
 
 __all__ = [
     # Glass geometry analysis
@@ -78,5 +89,14 @@ __all__ = [
     'SceneSnapshot',
     'SimulationResult',
     'describe_simulation_result',
+    # Scene object lookup (Python-specific)
+    'get_object_by_name',
+    'get_object_by_uuid',
+    'get_objects_by_type',
+    # Ray-geometry queries (Python-specific)
+    'find_rays_inside_glass',
+    'find_rays_crossing_edge',
+    'find_rays_by_angle_to_edge',
+    'find_rays_by_polarization',
 ]
 
