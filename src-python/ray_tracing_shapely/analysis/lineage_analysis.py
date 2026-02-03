@@ -16,6 +16,11 @@ angular importance distributions.
 
 All functions take a RayLineage (and optionally the segment list) as input
 and return plain dicts/lists -- no side effects.
+
+These tools are all topology-centric: they navigate the tree structure via 
+parent_uuid / children, and their spatial awareness is limited 
+to the source emission angle. They don't know about scene geometry at all 
+-- no glass boundaries, no edge labels, no surface normals
 ===============================================================================
 """
 
