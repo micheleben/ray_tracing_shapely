@@ -291,6 +291,51 @@ _REGISTRY: List[Dict[str, str]] = [
         'description': "Compute Brewster's angle (where R_p = 0)",
     },
     # -------------------------------------------------------------------------
+    # analysis.agentic_tools -- JSON-serializable wrappers for LLM tool-use
+    # -------------------------------------------------------------------------
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'set_context',
+        'kind': 'function',
+        'signature': '(scene, segments, lineage=None) -> None',
+        'description': 'Register simulation objects for agentic tool wrappers',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'set_context_from_result',
+        'kind': 'function',
+        'signature': '(scene, result) -> None',
+        'description': 'Populate agentic tool context from a SimulationResult',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'find_rays_inside_glass_xml',
+        'kind': 'function',
+        'signature': '(glass_name) -> str',
+        'description': 'Find rays inside a named glass, return XML string',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'find_rays_crossing_edge_xml',
+        'kind': 'function',
+        'signature': '(glass_name, edge_label) -> str',
+        'description': 'Find rays crossing a named glass edge, return XML string',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'find_rays_by_angle_to_edge_xml',
+        'kind': 'function',
+        'signature': '(glass_name, edge_label, min_angle=0, max_angle=90) -> str',
+        'description': 'Find rays by angle to a named glass edge, return XML string',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'find_rays_by_polarization_xml',
+        'kind': 'function',
+        'signature': '(min_dop=0, max_dop=1) -> str',
+        'description': 'Filter rays by degree of polarization, return XML string',
+    },
+    # -------------------------------------------------------------------------
     # analysis.tool_registry -- Tool discovery
     # -------------------------------------------------------------------------
     {
@@ -299,6 +344,13 @@ _REGISTRY: List[Dict[str, str]] = [
         'kind': 'function',
         'signature': "(format='text') -> str | Dict",
         'description': 'List all public analysis tools available in the analysis module',
+    },
+    {
+        'module': 'analysis.tool_registry',
+        'name': 'get_agentic_tools',
+        'kind': 'function',
+        'signature': '() -> List[Dict[str, Any]]',
+        'description': 'Return agentic tool wrappers with metadata for LLM frameworks',
     },
 ]
 
@@ -347,3 +399,57 @@ def list_available_tools(format: str = 'text') -> Union[str, Dict[str, List[Dict
         lines.append(f"  {entry['name']:40s} {kind_tag:12s} {entry['description']}")
 
     return '\n'.join(lines)
+
+
+def get_agentic_tools() -> List[Dict[str, Any]]:
+    """
+    Return the string-based agentic tool wrappers with metadata.
+
+    Each entry contains:
+    - 'name': function name (str)
+    - 'function': the callable
+    - 'description': one-line description (str)
+
+    These are framework-agnostic.  To use with a specific framework::
+
+        # claudette
+        from claudette import Chat
+        tools = [t['function'] for t in get_agentic_tools()]
+        chat = Chat(model, tools=tools)
+
+        # langchain
+        from langchain.tools import StructuredTool
+        tools = [StructuredTool.from_function(t['function']) for t in get_agentic_tools()]
+
+    Returns:
+        List of dicts with tool metadata and callables.
+    """
+    from .agentic_tools import (
+        find_rays_inside_glass_xml,
+        find_rays_crossing_edge_xml,
+        find_rays_by_angle_to_edge_xml,
+        find_rays_by_polarization_xml,
+    )
+
+    return [
+        {
+            'name': 'find_rays_inside_glass_xml',
+            'function': find_rays_inside_glass_xml,
+            'description': 'Find rays inside a named glass, return XML string',
+        },
+        {
+            'name': 'find_rays_crossing_edge_xml',
+            'function': find_rays_crossing_edge_xml,
+            'description': 'Find rays crossing a named glass edge, return XML string',
+        },
+        {
+            'name': 'find_rays_by_angle_to_edge_xml',
+            'function': find_rays_by_angle_to_edge_xml,
+            'description': 'Find rays by angle to a named glass edge, return XML string',
+        },
+        {
+            'name': 'find_rays_by_polarization_xml',
+            'function': find_rays_by_polarization_xml,
+            'description': 'Filter rays by degree of polarization, return XML string',
+        },
+    ]

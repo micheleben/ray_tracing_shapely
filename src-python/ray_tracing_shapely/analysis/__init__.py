@@ -76,6 +76,17 @@ from .fresnel_utils import (
 )
 from .tool_registry import (
     list_available_tools,
+    get_agentic_tools,
+)
+from .agentic_tools import (
+    set_context,
+    set_context_from_result,
+    get_context,
+    clear_context,
+    find_rays_inside_glass_xml,
+    find_rays_crossing_edge_xml,
+    find_rays_by_angle_to_edge_xml,
+    find_rays_by_polarization_xml,
 )
 
 __all__ = [
@@ -117,5 +128,15 @@ __all__ = [
     'brewster_angle',
     # Tool discovery (Python-specific)
     'list_available_tools',
+    'get_agentic_tools',
+    # Agentic tools -- JSON-serializable wrappers (Python-specific)
+    'set_context',
+    'set_context_from_result',
+    'get_context',
+    'clear_context',
+    'find_rays_inside_glass_xml',
+    'find_rays_crossing_edge_xml',
+    'find_rays_by_angle_to_edge_xml',
+    'find_rays_by_polarization_xml',
 ]
 

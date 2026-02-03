@@ -137,7 +137,11 @@ Both scenarios use the same code — the only difference is who calls
 
 ---
 
-## Phase 1: String-based tool wrappers
+## Phase 1: String-based tool wrappers -- IMPLEMENTED
+
+> **Status**: Complete. Four XML wrapper functions and context management
+> implemented in `analysis/agentic_tools.py`. `get_agentic_tools()` added to
+> `analysis/tool_registry.py`. All exported via `analysis/__init__.py`.
 
 Each wrapper is a 1:1 match to an existing analysis function.  It takes only
 JSON-serializable parameters, resolves objects from `_CONTEXT`, delegates to
@@ -253,7 +257,10 @@ but the foundation should be generic wrappers.
 
 ---
 
-## Phase 2: Update tool_registry.py
+## Phase 2: Update tool_registry.py -- IMPLEMENTED
+
+> **Status**: Complete. `get_agentic_tools()` added to `tool_registry.py`.
+> Static registry updated with 8 new entries (6 agentic_tools + 2 registry).
 
 Add a function that returns the agentic tools as a list of dicts with
 metadata that any LLM framework can consume.
@@ -292,6 +299,38 @@ Plain dicts with `name`, `function`, `description` are the lowest common
 denominator that every framework can consume.  The docstrings on the wrapper
 functions themselves carry the parameter descriptions that frameworks like
 claudette extract automatically via introspection.
+
+### Files created / modified
+
+| File | Action |
+|------|--------|
+| `analysis/agentic_tools.py` | **Created.** Context management (`set_context`, `set_context_from_result`, `get_context`, `clear_context`) + 4 XML wrapper functions + `_require_context()` helper |
+| `analysis/tool_registry.py` | **Modified.** Added `get_agentic_tools()` function + 8 new entries to static registry |
+| `analysis/__init__.py` | **Modified.** Added imports and `__all__` entries for all new public symbols |
+
+### Verification results
+
+Tested with a point source + prism scene (100 segments):
+
+```
+Context management:
+  set_context_from_result() correctly populates scene, segments, lineage
+  clear_context() correctly resets — tools raise RuntimeError after clear
+
+Tool wrappers:
+  find_rays_inside_glass_xml('Main Prism')     -> 25 rays (XML, 10685 chars)
+  find_rays_crossing_edge_xml('Main Prism','N') -> 18 rays
+  find_rays_by_angle_to_edge_xml('Main Prism','N', 0, 30) -> 12 rays
+  find_rays_by_polarization_xml(0.0, 0.1)      -> 67 rays
+
+Error handling:
+  No context  -> RuntimeError with clear message
+  Bad name    -> ValueError("No object named 'Nonexistent'. Named objects: ['Main Prism']")
+
+get_agentic_tools():
+  Returns 4 dicts with 'name', 'function', 'description'
+  All functions are callable
+```
 
 ---
 
