@@ -29,7 +29,7 @@ via uuid-based filtering.  See the roadmap document for examples.
 from __future__ import annotations
 
 import math
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, Union, TYPE_CHECKING
 
 from shapely.geometry import Point, LineString
 
@@ -409,8 +409,9 @@ def find_rays_by_polarization(
 def interpolate_along_edge(
     glass_obj: 'BaseGlass',
     edge_label: str,
-    fraction: float = 0.5
-) -> Tuple[float, float]:
+    fraction: float = 0.5,
+    as_point: bool = False,
+) -> Union[Tuple[float, float], Point]:
     """
     Get the (x, y) coordinates at a fractional position along a glass edge.
 
@@ -423,20 +424,24 @@ def interpolate_along_edge(
             string).
         fraction: Position along the edge, 0.0 = start (p1), 1.0 = end
             (p2). Default: 0.5 (midpoint).
+        as_point: If True, return a ``shapely.geometry.Point`` instead of
+            an (x, y) tuple. Default: False.
 
     Returns:
-        (x, y) tuple of the interpolated point coordinates.
+        (x, y) tuple, or a ``shapely.geometry.Point`` if *as_point* is True.
 
     Raises:
         ValueError: If ``edge_label`` doesn't match any edge.
 
     Example:
-        >>> # Point at 3/4 along the south edge
         >>> x, y = interpolate_along_edge(prism, 'S', 3/4)
+        >>> pt = interpolate_along_edge(prism, 'S', 3/4, as_point=True)
     """
     edge = _resolve_edge(glass_obj, edge_label)
     edge_line = _edge_to_linestring(edge)
     point = edge_line.interpolate(fraction, normalized=True)
+    if as_point:
+        return point
     return (point.x, point.y)
 
 
