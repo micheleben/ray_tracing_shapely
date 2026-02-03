@@ -65,6 +65,17 @@ from .ray_geometry_queries import (
     find_rays_crossing_edge,
     find_rays_by_angle_to_edge,
     find_rays_by_polarization,
+    # Phase 2: Geometry convenience utilities
+    interpolate_along_edge,
+    describe_all_glass_edges,
+)
+from .fresnel_utils import (
+    fresnel_transmittances,
+    critical_angle,
+    brewster_angle,
+)
+from .tool_registry import (
+    list_available_tools,
 )
 
 __all__ = [
@@ -98,5 +109,13 @@ __all__ = [
     'find_rays_crossing_edge',
     'find_rays_by_angle_to_edge',
     'find_rays_by_polarization',
+    'interpolate_along_edge',
+    'describe_all_glass_edges',
+    # Fresnel equation utilities (Python-specific)
+    'fresnel_transmittances',
+    'critical_angle',
+    'brewster_angle',
+    # Tool discovery (Python-specific)
+    'list_available_tools',
 ]
 

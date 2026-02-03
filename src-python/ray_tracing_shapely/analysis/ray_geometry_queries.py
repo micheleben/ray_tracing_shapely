@@ -29,11 +29,11 @@ via uuid-based filtering.  See the roadmap document for examples.
 from __future__ import annotations
 
 import math
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from shapely.geometry import Point, LineString
 
-from .glass_geometry import glass_to_polygon, get_edge_descriptions, EdgeDescription
+from .glass_geometry import glass_to_polygon, get_edge_descriptions, describe_edges, EdgeDescription
 
 if TYPE_CHECKING:
     from ..core.ray import Ray
@@ -400,3 +400,76 @@ def find_rays_by_polarization(
         ray for ray in segments
         if min_dop <= ray.degree_of_polarization <= max_dop
     ]
+
+
+# =============================================================================
+# Phase 2 -- Geometry convenience utilities
+# =============================================================================
+
+def interpolate_along_edge(
+    glass_obj: 'BaseGlass',
+    edge_label: str,
+    fraction: float = 0.5
+) -> Tuple[float, float]:
+    """
+    Get the (x, y) coordinates at a fractional position along a glass edge.
+
+    Uses ``get_edge_descriptions()`` to resolve the edge, then Shapely's
+    ``LineString.interpolate()`` for the computation.
+
+    Args:
+        glass_obj: A BaseGlass object with labeled edges.
+        edge_label: Label of the edge (short_label, long_label, or index
+            string).
+        fraction: Position along the edge, 0.0 = start (p1), 1.0 = end
+            (p2). Default: 0.5 (midpoint).
+
+    Returns:
+        (x, y) tuple of the interpolated point coordinates.
+
+    Raises:
+        ValueError: If ``edge_label`` doesn't match any edge.
+
+    Example:
+        >>> # Point at 3/4 along the south edge
+        >>> x, y = interpolate_along_edge(prism, 'S', 3/4)
+    """
+    edge = _resolve_edge(glass_obj, edge_label)
+    edge_line = _edge_to_linestring(edge)
+    point = edge_line.interpolate(fraction, normalized=True)
+    return (point.x, point.y)
+
+
+def describe_all_glass_edges(
+    scene: 'Scene',
+    format: str = 'text'
+) -> str:
+    """
+    Describe all edges of all glass objects in a scene.
+
+    Iterates over all BaseGlass subclass objects in the scene and
+    concatenates their edge descriptions.
+
+    Args:
+        scene: The Scene to describe.
+        format: Output format ('text' or 'xml'). Default: 'text'.
+
+    Returns:
+        Concatenated edge descriptions for all glass objects.
+    """
+    from ..core.scene_objs.base_glass import BaseGlass
+
+    parts = []
+    for obj in scene.objs:
+        if not isinstance(obj, BaseGlass):
+            continue
+        name = getattr(obj, 'name', None) or getattr(obj, 'uuid', 'unknown')[:12]
+        if format == 'xml':
+            parts.append(describe_edges(obj, format='xml', show_coordinates=True))
+        else:
+            header = f"=== {name} ==="
+            parts.append(header)
+            parts.append(describe_edges(obj, format='text', show_coordinates=True))
+            parts.append('')
+
+    return '\n'.join(parts)

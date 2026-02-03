@@ -3,7 +3,10 @@ This file is a collection of various tools that will go into a dedicated module 
 
 ---
 
-## Section 1: Fresnel equation utilities
+## Section 1: Fresnel equation utilities -- IMPLEMENTED
+
+> **Status**: Complete. Three standalone Fresnel functions implemented in
+> `analysis/fresnel_utils.py` and exported via `analysis/__init__.py`.
 
 Standalone functions that solve the Fresnel equations to compute expected transmittances, reflectances, polarization ratios, and critical angles. The physics is already implemented inside `BaseGlass.refract()` but is not callable standalone -- these utilities let a designer or agent ask "what should I expect?" without running a simulation.
 
@@ -75,6 +78,26 @@ def brewster_angle(n1: float, n2: float) -> float:
 - `brewster_angle` is not in the original proposal but naturally belongs here -- it's the angle where `R_p = 0` and is useful for understanding polarization effects.
 - The inline demo/sweep code from the original proposal (hardcoded `n1, n2`, brute-force angle search) belongs in a test or notebook example, not in the function bodies.
 
+### Verification results
+
+```
+Normal incidence (air->glass 1.5):
+  R_s=0.040000  R_p=0.040000  T_s=0.960000  T_p=0.960000  (matches textbook 4% reflection)
+
+45 deg incidence (air->glass 1.5):
+  R_s=0.092013  R_p=0.008466  theta_t=28.13 deg  ratio_Tp_Ts=1.0920
+
+Brewster angle (air->glass 1.5): 56.31 deg
+  At Brewster: R_p=0.0000000000 (correct: R_p=0 by definition)
+
+Critical angle (glass 1.5->air): 41.81 deg
+  fresnel_transmittances(1.5, 1.0, 45) correctly raises ValueError (TIR)
+  critical_angle(1.0, 1.5) correctly raises ValueError (n1 <= n2)
+```
+
+Uses standard textbook Fresnel equations with explicit n1, n2 (not the ratio
+formulation used internally in `base_glass.py`).
+
 ### Original notebook-style code (reference only)
 
 The following code was the starting point for the proposal. The sweep logic should be moved to docstring examples or tests.
@@ -90,7 +113,10 @@ for angle in [80, 85, 87, 88, 89, 89.5, 89.9]:
 
 ---
 
-## Section 2: Geometry convenience tools
+## Section 2: Geometry convenience tools -- IMPLEMENTED
+
+> **Status**: Complete. Two functions added to `analysis/ray_geometry_queries.py`
+> under a new "Phase 2" section. Exported via `analysis/__init__.py`.
 
 General tools for locating points on edges and describing scene geometry. Useful for an LLM agent answering questions like "give me the coordinates of the point at 3/4 of the south edge of the prism".
 
@@ -161,7 +187,10 @@ def describe_all_glass_edges(
 
 ---
 
-## Section 3: Tool discovery (`list_available_tools`)
+## Section 3: Tool discovery (`list_available_tools`) -- IMPLEMENTED
+
+> **Status**: Complete. Static registry implemented in `analysis/tool_registry.py`
+> with 36 entries across 7 modules. Exported via `analysis/__init__.py`.
 
 An agent or user needs a way to discover what analysis tools are available without reading source files. This is a static registry that returns a structured list of all public functions and classes in the `analysis` module, organized by sub-module.
 
