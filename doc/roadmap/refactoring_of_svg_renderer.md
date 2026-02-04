@@ -27,6 +27,21 @@ User:  Sees the full scene with the 54 crossing rays in yellow, everything else 
 
 Phases 0-5 build the metadata foundation. Phases 6-7 build the agentic rendering tools on top.
 
+### Coding style conventions
+
+All new and refactored code in this roadmap must follow these style rules:
+
+- **Full type annotations** on every function parameter and return type. Avoid `Any` -- use specific types, `Union`, `Optional`, or protocol classes instead. If a parameter can accept multiple types, spell them out explicitly (e.g. `Union[str, int]` not `Any`).
+- **Methods that perform actions should return `bool`**: class methods that execute an operation (drawing, saving, modifying state) should return `True` on success. This gives callers a way to check completion without relying on exception-only signaling. Example:
+  ```python
+  def draw_ray_segment(self, ray: 'Ray', color: str = 'red', ...) -> bool:
+      # ... drawing logic ...
+      self.layer_rays.add(line)
+      return True
+  ```
+- **Pure query methods** (getters, computations) return their natural type -- no `bool` wrapping needed.
+- Use `TYPE_CHECKING` blocks for imports that are only needed for annotations, to avoid circular imports at runtime.
+
 ---
 
 ## Current state
