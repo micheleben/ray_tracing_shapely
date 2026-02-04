@@ -217,7 +217,7 @@ class SVGRenderer:
         layer_labels (svgwrite.Group): Group for label elements
     """
 
-    def __init__(self, width=800, height=600, viewbox=None):
+    def __init__(self, width=800, height=600, viewbox=None, metadata_level='full'):
         """
         Initialize the SVG renderer.
 
@@ -226,6 +226,10 @@ class SVGRenderer:
             height (int): Canvas height in pixels (default: 600)
             viewbox (tuple or None): SVG viewBox as (min_x, min_y, width, height)
                                     If None, uses (0, 0, width, height)
+            metadata_level (str): Controls how much simulation metadata to embed.
+                - 'none': No simulation metadata (smallest files)
+                - 'standard': id + inkscape:label + class (good for Inkscape navigation)
+                - 'full': All of 'standard' plus data-* attributes (good for scripting)
 
         Note:
             The viewbox coordinates use a Y-up system (positive Y goes up).
@@ -233,6 +237,7 @@ class SVGRenderer:
         """
         self.width = width
         self.height = height
+        self.metadata_level = metadata_level
         self.user_viewbox = viewbox if viewbox is not None else (0, 0, width, height)
 
         # Convert user's Y-up viewbox to SVG's Y-down viewbox
@@ -368,19 +373,21 @@ class SVGRenderer:
         if ray.gap and not draw_gap_rays:
             return
 
-        # Build id from ray uuid (guaranteed unique per segment)
+        # Build metadata based on metadata_level
         ray_uuid = getattr(ray, 'uuid', None)
-        ray_id = f'ray-{ray_uuid}' if ray_uuid else f'ray-b{ray.total_brightness:.3f}'
+        ray_id = None
+        ray_label = None
 
-        # Build human-readable label for Inkscape
-        label_parts = []
-        if ray.wavelength is not None:
-            label_parts.append(f'{ray.wavelength:.0f}nm')
-        label_parts.append(f'b={ray.total_brightness:.3f}')
-        interaction = getattr(ray, 'interaction_type', None)
-        if interaction:
-            label_parts.append(interaction)
-        ray_label = ' '.join(label_parts)
+        if self.metadata_level != 'none':
+            ray_id = f'ray-{ray_uuid}' if ray_uuid else f'ray-b{ray.total_brightness:.3f}'
+            label_parts = []
+            if ray.wavelength is not None:
+                label_parts.append(f'{ray.wavelength:.0f}nm')
+            label_parts.append(f'b={ray.total_brightness:.3f}')
+            interaction = getattr(ray, 'interaction_type', None)
+            if interaction:
+                label_parts.append(interaction)
+            ray_label = ' '.join(label_parts)
 
         if show_arrow:
             # Draw ray with arrow
@@ -389,27 +396,23 @@ class SVGRenderer:
                                       ray_label=ray_label, ray=ray)
         else:
             # Draw simple line
-            line = self.dwg.line(
+            kwargs = dict(
                 start=(p1['x'], p1['y']),
                 end=(p2['x'], p2['y']),
                 stroke=color,
                 stroke_width=stroke_width,
                 stroke_opacity=opacity,
-                id=ray_id,
             )
-            line['class'] = 'ray'
-            line['inkscape:label'] = ray_label
+            if ray_id:
+                kwargs['id'] = ray_id
+            line = self.dwg.line(**kwargs)
 
-            # data-* attributes for scripting
-            if ray_uuid:
-                line['data-uuid'] = ray_uuid
-            if ray.wavelength is not None:
-                line['data-wavelength'] = str(ray.wavelength)
-            line['data-brightness-s'] = f'{ray.brightness_s:.6f}'
-            line['data-brightness-p'] = f'{ray.brightness_p:.6f}'
-            parent_uuid = getattr(ray, 'parent_uuid', None)
-            if parent_uuid:
-                line['data-parent-uuid'] = parent_uuid
+            if self.metadata_level != 'none':
+                line['class'] = 'ray'
+                line['inkscape:label'] = ray_label
+
+            if self.metadata_level == 'full':
+                self._attach_ray_data_attributes(line, ray)
 
             self.layer_rays.add(line)
     
@@ -526,10 +529,11 @@ class SVGRenderer:
             )
             if ray_id:
                 line['id'] = ray_id
-            line['class'] = 'ray'
-            if ray_label:
-                line['inkscape:label'] = ray_label
-            if ray is not None:
+            if self.metadata_level != 'none':
+                line['class'] = 'ray'
+                if ray_label:
+                    line['inkscape:label'] = ray_label
+            if self.metadata_level == 'full' and ray is not None:
                 self._attach_ray_data_attributes(line, ray)
             self.layer_rays.add(line)
             return
@@ -538,10 +542,11 @@ class SVGRenderer:
         group = self.dwg.g()
         if ray_id:
             group['id'] = ray_id
-        group['class'] = 'ray'
-        if ray_label:
-            group['inkscape:label'] = ray_label
-        if ray is not None:
+        if self.metadata_level != 'none':
+            group['class'] = 'ray'
+            if ray_label:
+                group['inkscape:label'] = ray_label
+        if self.metadata_level == 'full' and ray is not None:
             self._attach_ray_data_attributes(group, ray)
 
         # Calculate arrow position
@@ -621,7 +626,16 @@ class SVGRenderer:
 
     def _attach_scene_obj_metadata(self, element, scene_obj,
                                    css_class: str = 'scene-obj') -> None:
-        """Attach id, inkscape:label, class, and data-uuid from a scene object."""
+        """Attach id, inkscape:label, class, and data-uuid from a scene object.
+
+        Respects self.metadata_level:
+        - 'none': no metadata attached
+        - 'standard': id + inkscape:label + class
+        - 'full': standard + data-uuid
+        """
+        if self.metadata_level == 'none':
+            return
+
         obj_uuid = getattr(scene_obj, 'uuid', None)
         obj_name = getattr(scene_obj, 'name', None)
         if obj_name is None:
@@ -630,10 +644,12 @@ class SVGRenderer:
                 obj_name = get_name()
         if obj_uuid:
             element['id'] = f'{css_class}-{obj_uuid}'
-            element['data-uuid'] = obj_uuid
         if obj_name:
             element['inkscape:label'] = obj_name
         element['class'] = css_class
+
+        if self.metadata_level == 'full' and obj_uuid:
+            element['data-uuid'] = obj_uuid
 
     def draw_ray_with_scene_settings(self, ray, scene, base_color=(255, 0, 0),
                                      stroke_width=1.5, extend_to_edge=False):
@@ -706,14 +722,23 @@ class SVGRenderer:
         self.layer_objects.add(circle)
 
         if label:
+            font_size = '8px'
+            vertical_offset = 8 * 0.35
+
             text = self.dwg.text(
                 label,
-                insert=(point['x'] + radius + 2, point['y'] + radius + 2),
+                insert=(point['x'] + radius + 2,
+                        -(point['y'] - radius - 2) + vertical_offset),
                 fill=color,
-                font_size='12px',
+                font_size=font_size,
                 font_family='sans-serif',
                 transform='scale(1, -1)'  # Flip text back to be readable
             )
+            # Attach id from scene_obj if available
+            if scene_obj is not None:
+                obj_uuid = getattr(scene_obj, 'uuid', None)
+                if obj_uuid:
+                    text['id'] = f'label-point-{obj_uuid}'
             self.layer_labels.add(text)
 
     def draw_line_segment(self, p1, p2, color='gray', stroke_width=2, label=None,
@@ -748,15 +773,23 @@ class SVGRenderer:
             # Place label at midpoint
             mid_x = self._normalize_coord((p1['x'] + p2['x']) / 2)
             mid_y = self._normalize_coord((p1['y'] + p2['y']) / 2)
+            font_size = '8px'
+            vertical_offset = 8 * 0.35
+
             text = self.dwg.text(
                 label,
-                insert=(mid_x, mid_y + 5),
+                insert=(mid_x, -mid_y + vertical_offset),
                 fill=color,
-                font_size='12px',
+                font_size=font_size,
                 font_family='sans-serif',
                 text_anchor='middle',
                 transform='scale(1, -1)'  # Flip text back to be readable
             )
+            # Attach id from scene_obj if available
+            if scene_obj is not None:
+                obj_uuid = getattr(scene_obj, 'uuid', None)
+                if obj_uuid:
+                    text['id'] = f'label-line-{obj_uuid}'
             self.layer_labels.add(text)
 
     def draw_lens(self, p1, p2, focal_length, color='blue', label=None,
@@ -817,15 +850,23 @@ class SVGRenderer:
         self.layer_objects.add(center_line)
 
         if label:
+            font_size = '8px'
+            vertical_offset = 8 * 0.35
+
             text = self.dwg.text(
                 label,
-                insert=(mid_x, mid_y + 15),
+                insert=(mid_x, -mid_y + vertical_offset),
                 fill=color,
-                font_size='12px',
+                font_size=font_size,
                 font_family='sans-serif',
                 text_anchor='middle',
                 transform='scale(1, -1)'  # Flip text back to be readable
             )
+            # Attach id from scene_obj if available
+            if scene_obj is not None:
+                obj_uuid = getattr(scene_obj, 'uuid', None)
+                if obj_uuid:
+                    text['id'] = f'label-lens-{obj_uuid}'
             self.layer_labels.add(text)
 
     def _draw_arrow_inward(self, pos, par_x, par_y, per_x, per_y, size, color):
@@ -948,15 +989,23 @@ class SVGRenderer:
             center_x = self._normalize_coord(sum_x / len(path))
             center_y = self._normalize_coord(sum_y / len(path))
 
+            font_size = '8px'
+            vertical_offset = 8 * 0.35  # Approximate vertical centering
+
             text = self.dwg.text(
                 label,
-                insert=(center_x, center_y),
+                insert=(center_x, -center_y + vertical_offset),
                 fill=stroke,
-                font_size='12px',
+                font_size=font_size,
                 font_family='sans-serif',
                 text_anchor='middle',
                 transform='scale(1, -1)'  # Flip text back to be readable
             )
+            # Attach id from glass_obj if available
+            if glass_obj is not None:
+                obj_uuid = getattr(glass_obj, 'uuid', None)
+                if obj_uuid:
+                    text['id'] = f'label-glass-{obj_uuid}'
             self.layer_labels.add(text)
 
     # =========================================================================
@@ -1097,6 +1146,188 @@ class SVGRenderer:
             edge_group.add(line)
 
         self.layer_objects.add(edge_group)
+        return True
+
+    def draw_scene(self, scene, segments=None, draw_rays: bool = True,
+                   draw_objects: bool = True, draw_edge_labels: bool = True,
+                   draw_edge_overlays: bool = True, **ray_kwargs) -> bool:
+        """
+        Draw all objects and rays from a scene with full metadata.
+
+        This is a convenience method. For fine-grained control over appearance,
+        use the individual draw_* methods directly.
+
+        Args:
+            scene: The Scene object (must have .objs attribute).
+            segments: List of Ray segments to draw. Required if draw_rays=True.
+            draw_rays (bool): Whether to draw ray segments (default: True).
+            draw_objects (bool): Whether to draw scene objects (default: True).
+            draw_edge_labels (bool): Whether to draw edge labels on glass
+                objects (default: True).
+            draw_edge_overlays (bool): Whether to add invisible edge overlay
+                elements for glass objects (default: True).
+            **ray_kwargs: Additional keyword arguments passed to
+                draw_ray_with_scene_settings (e.g. base_color, stroke_width).
+
+        Returns:
+            bool: True on success.
+        """
+        if draw_objects:
+            for obj in scene.objs:
+                # Glass objects: have path with >= 3 points
+                if hasattr(obj, 'path') and hasattr(obj.path, '__len__') and len(obj.path) >= 3:
+                    display_name = getattr(obj, 'get_display_name', lambda: None)()
+                    self.draw_glass_path(obj.path, label=display_name, glass_obj=obj)
+                    if draw_edge_overlays:
+                        self.draw_glass_edge_overlays(obj)
+                    if draw_edge_labels:
+                        self.draw_glass_edge_labels(obj)
+                # Ideal lenses: have focalLength and p1/p2
+                elif hasattr(obj, 'focalLength') and hasattr(obj, 'p1'):
+                    display_name = getattr(obj, 'get_display_name', lambda: None)()
+                    self.draw_lens(obj.p1, obj.p2, obj.focalLength,
+                                   label=display_name, scene_obj=obj)
+                # Point sources: have x, y attributes and emit rays
+                elif hasattr(obj, 'x') and hasattr(obj, 'y') and not hasattr(obj, 'p2'):
+                    display_name = getattr(obj, 'get_display_name', lambda: None)()
+                    self.draw_point({'x': obj.x, 'y': obj.y},
+                                    color='orange', radius=4,
+                                    label=display_name, scene_obj=obj)
+                # Line-based objects: have p1, p2 (mirrors, detectors, etc.)
+                elif hasattr(obj, 'p1') and hasattr(obj, 'p2'):
+                    display_name = getattr(obj, 'get_display_name', lambda: None)()
+                    self.draw_line_segment(obj.p1, obj.p2,
+                                           label=display_name, scene_obj=obj)
+
+        if draw_rays and segments:
+            for seg in segments:
+                self.draw_ray_with_scene_settings(seg, scene, **ray_kwargs)
+
+        return True
+
+    def _ensure_highlight_layer(self):
+        """Create the Highlights layer on first use."""
+        if not hasattr(self, 'layer_highlights'):
+            self.layer_highlights = self.dwg.add(self.dwg.g(
+                id='layer-highlights',
+                transform='scale(1, -1)',
+                **{'inkscape:groupmode': 'layer',
+                   'inkscape:label': 'Highlights'}
+            ))
+        return self.layer_highlights
+
+    def draw_scene_with_highlights(
+        self,
+        scene,
+        segments,
+        highlight_ray_uuids=None,
+        highlight_edge_specs=None,
+        highlight_glass_names=None,
+        highlight_color: str = 'yellow',
+        highlight_stroke_width: float = 3.0,
+        dim_opacity: float = 0.15,
+        base_ray_color: str = 'gray',
+        edge_highlight_color: str = 'lime',
+        edge_highlight_width: float = 4.0,
+    ) -> bool:
+        """
+        Render a full scene with specific elements highlighted.
+
+        Draws in multiple passes so that highlighted elements appear on top.
+        Non-highlighted rays are dimmed; highlighted rays, edges, and glass
+        objects are drawn vividly.
+
+        Args:
+            scene: The Scene object.
+            segments: All ray segments from the simulation.
+            highlight_ray_uuids: Set of ray uuids to highlight. If None, all
+                rays are drawn normally (no dimming).
+            highlight_edge_specs: List of (glass_name, edge_label) tuples.
+                Matched edges are drawn with a vivid overlay.
+            highlight_glass_names: List of glass object names to highlight
+                (drawn with a stronger fill opacity).
+            highlight_color (str): CSS color for highlighted rays.
+            highlight_stroke_width (float): Stroke width for highlighted rays.
+            dim_opacity (float): Opacity for non-highlighted rays.
+            base_ray_color (str): Color for non-highlighted rays.
+            edge_highlight_color (str): Color for highlighted edges.
+            edge_highlight_width (float): Stroke width for highlighted edges.
+
+        Returns:
+            bool: True on success.
+        """
+        from ..analysis.ray_geometry_queries import get_object_by_name, _resolve_edge
+
+        highlight_set = set(highlight_ray_uuids) if highlight_ray_uuids else set()
+        highlight_names = set(highlight_glass_names) if highlight_glass_names else set()
+
+        # --- Pass 1: Draw all objects ---
+        for obj in scene.objs:
+            if hasattr(obj, 'path') and hasattr(obj.path, '__len__') and len(obj.path) >= 3:
+                name = getattr(obj, 'name', None)
+                is_highlighted = name in highlight_names if name else False
+                fill_opacity = 0.5 if is_highlighted else 0.2
+                self.draw_glass_path(obj.path, fill_opacity=fill_opacity, glass_obj=obj)
+                self.draw_glass_edge_labels(obj)
+                self.draw_glass_edge_overlays(obj)
+            elif hasattr(obj, 'focalLength') and hasattr(obj, 'p1'):
+                display_name = getattr(obj, 'get_display_name', lambda: None)()
+                self.draw_lens(obj.p1, obj.p2, obj.focalLength,
+                               label=display_name, scene_obj=obj)
+            elif hasattr(obj, 'x') and hasattr(obj, 'y') and not hasattr(obj, 'p2'):
+                display_name = getattr(obj, 'get_display_name', lambda: None)()
+                self.draw_point({'x': obj.x, 'y': obj.y},
+                                color='orange', radius=4,
+                                label=display_name, scene_obj=obj)
+            elif hasattr(obj, 'p1') and hasattr(obj, 'p2'):
+                display_name = getattr(obj, 'get_display_name', lambda: None)()
+                self.draw_line_segment(obj.p1, obj.p2,
+                                       label=display_name, scene_obj=obj)
+
+        # --- Pass 2: Draw non-highlighted rays (dimmed) ---
+        for seg in segments:
+            seg_uuid = getattr(seg, 'uuid', None)
+            if highlight_set and seg_uuid and seg_uuid in highlight_set:
+                continue  # Skip — will be drawn in highlight pass
+            if highlight_set:
+                # Dim non-highlighted rays
+                self.draw_ray_segment(seg, color=base_ray_color,
+                                      opacity=dim_opacity, stroke_width=1.0)
+            else:
+                # No highlights requested — draw all rays normally
+                self.draw_ray_with_scene_settings(seg, scene)
+
+        # --- Pass 3: Draw highlighted rays on top ---
+        if highlight_set:
+            hl_layer = self._ensure_highlight_layer()
+            # Temporarily swap layer_rays to the highlight layer
+            orig_layer = self.layer_rays
+            self.layer_rays = hl_layer
+            for seg in segments:
+                seg_uuid = getattr(seg, 'uuid', None)
+                if seg_uuid and seg_uuid in highlight_set:
+                    self.draw_ray_segment(seg, color=highlight_color,
+                                          opacity=1.0,
+                                          stroke_width=highlight_stroke_width)
+            self.layer_rays = orig_layer
+
+        # --- Pass 4: Draw highlighted edges on top ---
+        if highlight_edge_specs:
+            hl_layer = self._ensure_highlight_layer()
+            for glass_name, edge_label in highlight_edge_specs:
+                glass = get_object_by_name(scene, glass_name)
+                edge = _resolve_edge(glass, edge_label)
+                line = self.dwg.line(
+                    start=(edge.p1.x, edge.p1.y),
+                    end=(edge.p2.x, edge.p2.y),
+                    stroke=edge_highlight_color,
+                    stroke_width=edge_highlight_width,
+                    stroke_opacity=0.9,
+                )
+                line['inkscape:label'] = f'highlight: {glass_name} {edge_label}'
+                line['class'] = 'highlight-edge'
+                hl_layer.add(line)
+
         return True
 
     def _calculate_arc_center(self, pt1, pt2, pt3):

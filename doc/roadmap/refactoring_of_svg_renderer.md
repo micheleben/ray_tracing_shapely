@@ -380,6 +380,13 @@ def __init__(self, width=800, height=600, viewbox=None, metadata_level='standard
 | `'standard'` | uuid-based | yes | yes | no | ~100 bytes |
 | `'full'` | uuid-based | yes | yes | yes | ~250 bytes |
 
+### Implementation notes (completed)
+
+- Added `metadata_level='full'` parameter to `__init__` (default is `'full'` so all existing code gets full metadata by default).
+- `draw_ray_segment` and `_draw_ray_with_arrow` gate `id`/`inkscape:label`/`class` on `metadata_level != 'none'`, and `data-*` attributes on `metadata_level == 'full'`.
+- `_attach_scene_obj_metadata` returns immediately when `metadata_level == 'none'`; attaches `data-uuid` only when `metadata_level == 'full'`.
+- Verified: `metadata_level='none'` produces zero ray/object metadata (only the 4 layer-level `inkscape:label` attributes remain). `'standard'` produces id + label + class but no `data-*`. `'full'` produces everything.
+
 ---
 
 ## Phase 5: Convenience method `draw_scene`
@@ -417,6 +424,17 @@ def draw_scene(self, scene, segments=None, draw_rays=True, draw_objects=True,
 
 - Object type detection uses duck typing (`hasattr(obj, 'path')`, `hasattr(obj, 'focal_length')`) rather than isinstance checks, to avoid importing all scene object types into the renderer.
 - This method is optional and additive. It doesn't change the existing manual pipeline.
+
+### Implementation notes (completed)
+
+- `draw_scene(scene, segments, draw_rays, draw_objects, draw_edge_labels, draw_edge_overlays, **ray_kwargs) -> bool` added.
+- Duck-typing dispatch for 4 object types:
+  1. **Glass** objects: `hasattr(obj, 'path') and len(obj.path) >= 3` → `draw_glass_path` + `draw_glass_edge_overlays` + `draw_glass_edge_labels`
+  2. **Ideal lenses**: `hasattr(obj, 'focalLength')` → `draw_lens` (note: attribute is `focalLength` not `focal_length` per the IdealLens class)
+  3. **Point sources**: `hasattr(obj, 'x') and hasattr(obj, 'y') and not hasattr(obj, 'p2')` → `draw_point`
+  4. **Line-based objects** (mirrors, detectors): `hasattr(obj, 'p1') and hasattr(obj, 'p2')` → `draw_line_segment`
+- Rays drawn via `draw_ray_with_scene_settings`, passing through `**ray_kwargs` for caller customization.
+- Returns `True` on success per coding conventions.
 
 ---
 
@@ -562,6 +580,29 @@ self.layer_highlights = self.dwg.add(self.dwg.g(
 ```
 
 This lets the user toggle highlights on/off in Inkscape by hiding the layer.
+
+### Implementation notes (completed)
+
+- `draw_scene_with_highlights(scene, segments, highlight_ray_uuids, highlight_edge_specs, highlight_glass_names, ...) -> bool` implemented with the four-pass approach from the roadmap.
+- **Highlights layer**: created lazily via `_ensure_highlight_layer()` — only added to the SVG when highlights are actually drawn. This avoids an empty layer in non-highlight SVGs. Both highlighted rays and highlighted edges go into this layer.
+- **Highlighted rays rendering**: the method temporarily swaps `self.layer_rays` to `self.layer_highlights` before drawing the highlighted rays, then restores it. This reuses the existing `draw_ray_segment` without modification while placing the output in the correct layer.
+- **Edge highlighting**: uses `get_object_by_name()` and `_resolve_edge()` from `ray_geometry_queries.py` (lazy imported inside the method).
+- When `highlight_ray_uuids` is `None` (no ray highlighting requested), all rays are drawn normally via `draw_ray_with_scene_settings` — no dimming applied.
+- Glass objects in `highlight_glass_names` get `fill_opacity=0.5` vs `0.2` for non-highlighted ones.
+
+---
+
+### Bug-fix notes (post-implementation, Phases 2/5 labels)
+
+Three label-rendering bugs were found after testing with the `uncoupled_copled_prisms.py` example in Inkscape:
+
+1. **Label Y-positioning**: Object labels (glass, point source, line segment, lens) used positive Y in the `insert=` parameter, but the labels layer has a `scale(1, -1)` transform, which placed them outside the viewbox (mirrored to the bottom). Edge labels already handled this correctly with `insert=(x, -y + vertical_offset)`. Fixed by negating Y in all four label blocks (`draw_glass_path`, `draw_point`, `draw_line_segment`, `draw_lens`).
+
+2. **Font size too large**: Object labels used `font_size='12px'` while edge labels used `'6px'`. Reduced object label font size to `'8px'` — slightly larger than edge labels to maintain hierarchy, but no longer oversized.
+
+3. **Generic text element IDs**: SVG text elements for labels had auto-generated IDs (e.g., `text1810`). Added meaningful IDs derived from the scene object's uuid: `label-glass-{uuid}`, `label-point-{uuid}`, `label-line-{uuid}`, `label-lens-{uuid}`. Only set when the corresponding `glass_obj`/`scene_obj` parameter is provided and has a `uuid` attribute.
+
+Verified fix by re-running the `uncoupled_copled_prisms.py` example — all labels now appear at correct positions near their objects, with proper font sizes and meaningful IDs.
 
 ---
 

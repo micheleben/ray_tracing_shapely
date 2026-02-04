@@ -308,7 +308,8 @@ def coupled_through_3rd_element_demo(
         color_mode: str = 'default',
         simulation_mode: str = 'rays',
         show_ray_arrows: bool = False,
-        min_brightness_exp: int = None
+        min_brightness_exp: int = None,
+        use_renderer_draw_routine:bool = False
     ):
     """Coupled Prisms demonstration.
 
@@ -423,27 +424,31 @@ def coupled_through_3rd_element_demo(
 
     # Render
     renderer = SVGRenderer(width=800, height=600, viewbox=(0, 0, 300, 200))
-    # draw measuring prism
-    renderer.draw_line_segment(meas_prism.path[0], meas_prism.path[1], color='blue', stroke_width=2, label='Prism', scene_obj=meas_prism)
-    renderer.draw_line_segment(meas_prism.path[1], meas_prism.path[2], color='blue', stroke_width=2, scene_obj=meas_prism)
-    renderer.draw_line_segment(meas_prism.path[2], meas_prism.path[0], color='blue', stroke_width=2, scene_obj=meas_prism)
+    # test of the new draw_scene method that should automatically draw all scene objects with the correct colors and labels, if use_renderer_draw_routine is set to True. If False, we use the old way of drawing each object manually, which is more verbose but allows for more customization.
+    if use_renderer_draw_routine:
+        renderer.draw_scene(scene,segments)
+    else:
+        # draw measuring prism
+        renderer.draw_line_segment(meas_prism.path[0], meas_prism.path[1], color='blue', stroke_width=2, label='Prism', scene_obj=meas_prism)
+        renderer.draw_line_segment(meas_prism.path[1], meas_prism.path[2], color='blue', stroke_width=2, scene_obj=meas_prism)
+        renderer.draw_line_segment(meas_prism.path[2], meas_prism.path[0], color='blue', stroke_width=2, scene_obj=meas_prism)
 
-    # draw medium
-    renderer.draw_line_segment(medium.path[0], medium.path[1], color='green', stroke_width=2, label='Medium', scene_obj=medium)
-    renderer.draw_line_segment(medium.path[1], medium.path[2], color='green', stroke_width=2, scene_obj=medium)
-    renderer.draw_line_segment(medium.path[2], medium.path[3], color='green', stroke_width=2, scene_obj=medium)
-    renderer.draw_line_segment(medium.path[3], medium.path[0], color='green', stroke_width=2, scene_obj=medium)
-    # draw illumination prism
-    renderer.draw_line_segment(ill_prism.path[0], ill_prism.path[1], color='blue', stroke_width=2, label='Prism', scene_obj=ill_prism)
-    renderer.draw_line_segment(ill_prism.path[1], ill_prism.path[2], color='blue', stroke_width=2, scene_obj=ill_prism)
-    renderer.draw_line_segment(ill_prism.path[2], ill_prism.path[0], color='blue', stroke_width=2, scene_obj=ill_prism)
+        # draw medium
+        renderer.draw_line_segment(medium.path[0], medium.path[1], color='green', stroke_width=2, label='Medium', scene_obj=medium)
+        renderer.draw_line_segment(medium.path[1], medium.path[2], color='green', stroke_width=2, scene_obj=medium)
+        renderer.draw_line_segment(medium.path[2], medium.path[3], color='green', stroke_width=2, scene_obj=medium)
+        renderer.draw_line_segment(medium.path[3], medium.path[0], color='green', stroke_width=2, scene_obj=medium)
+        # draw illumination prism
+        renderer.draw_line_segment(ill_prism.path[0], ill_prism.path[1], color='blue', stroke_width=2, label='Prism', scene_obj=ill_prism)
+        renderer.draw_line_segment(ill_prism.path[1], ill_prism.path[2], color='blue', stroke_width=2, scene_obj=ill_prism)
+        renderer.draw_line_segment(ill_prism.path[2], ill_prism.path[0], color='blue', stroke_width=2, scene_obj=ill_prism)
 
-    renderer.draw_glass_edge_labels(meas_prism)
+        renderer.draw_glass_edge_labels(meas_prism)
 
-    for seg in segments:
-        # Use draw_ray_with_scene_settings to respect color_mode settings
-        renderer.draw_ray_with_scene_settings(seg, scene, base_color=(255, 0, 0),
-                                              stroke_width=1.5, extend_to_edge=False)
+        for seg in segments:
+            # Use draw_ray_with_scene_settings to respect color_mode settings
+            renderer.draw_ray_with_scene_settings(seg, scene, base_color=(255, 0, 0),
+                                                stroke_width=1.5, extend_to_edge=False)
     if save_svg:
         renderer.save(output_file)
         print(f"\nSaved to: {output_file}")
@@ -570,7 +575,7 @@ def book_img_il():
     renderer.draw_ray_segment(segments[2],color='green', opacity=0.8, stroke_width=1.5,show_arrow=True,draw_gap_rays=True)    
     renderer.draw_ray_segment(segments[3],color='blue', opacity=0.8, stroke_width=1.5,show_arrow=True,draw_gap_rays=True)    
 
-    HTML(renderer.to_string())
+    #HTML(renderer.to_string())
 
 if __name__ == '__main__':
     # uncoupled_demo()
@@ -587,6 +592,7 @@ if __name__ == '__main__':
         color_mode= 'default',
         simulation_mode = 'observer',
         show_ray_arrows= True,
-        min_brightness_exp=2
+        min_brightness_exp=2,
+        use_renderer_draw_routine=True
     )
 
