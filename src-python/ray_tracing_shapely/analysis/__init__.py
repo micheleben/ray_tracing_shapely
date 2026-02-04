@@ -77,6 +77,7 @@ from .fresnel_utils import (
 from .tool_registry import (
     list_available_tools,
     get_agentic_tools,
+    generate_tool_note_for_solveit_notebook,
 )
 from .agentic_tools import (
     set_context,
@@ -129,6 +130,7 @@ __all__ = [
     # Tool discovery (Python-specific)
     'list_available_tools',
     'get_agentic_tools',
+    'generate_tool_note_for_solveit_notebook',
     # Agentic tools -- JSON-serializable wrappers (Python-specific)
     'set_context',
     'set_context_from_result',

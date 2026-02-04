@@ -453,3 +453,17 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
             'description': 'Filter rays by degree of polarization, return XML string',
         },
     ]
+
+def generate_tool_note_for_solveit_notebook(tool_list:List[Dict[str, Any]]= None):
+    """
+    Generate a markdown text which is supposed to be copied in a note in a solve.it notebook.
+    This is a little helper function for solve.it.com env, which is a jupyter notebook style 
+    environment for agent assisted exploratory programming.
+       
+    Returns:
+        A string with the formatting that is used by solve.it.com. 
+    """
+    if tool_list is None:
+        tool_list = get_agentic_tools()
+    names = [t['name'] for t in tool_list]
+    return f"### optical tools:\ntools from ray_tracing_shapely that you can use: &`{', '.join(names)}`"
