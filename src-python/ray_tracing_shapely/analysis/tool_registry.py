@@ -466,4 +466,4 @@ def generate_tool_note_for_solveit_notebook(tool_list:List[Dict[str, Any]]= None
     if tool_list is None:
         tool_list = get_agentic_tools()
     names = [t['name'] for t in tool_list]
-    return f"### optical tools:\ntools from ray_tracing_shapely that you can use: &`{', '.join(names)}`"
+    return f"### optical tools:\ntools from ray_tracing_shapely that you can use: &`[{', '.join(names)}]`"
