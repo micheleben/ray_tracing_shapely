@@ -242,10 +242,15 @@ class SVGRenderer:
         svg_viewbox = (min_x, -(min_y + vb_height), vb_width, vb_height)
         self.viewbox = svg_viewbox
 
-        # Create SVG drawing with profile='tiny' to disable strict validation
-        # This allows custom data-* attributes
-        self.dwg = svgwrite.Drawing(size=(f'{width}px', f'{height}px'), profile='tiny')
+        # Create SVG drawing with profile='full' to enable data-* attributes
+        # and Inkscape namespace support. debug=False disables svgwrite's
+        # strict attribute validation, which rejects custom namespaces.
+        self.dwg = svgwrite.Drawing(size=(f'{width}px', f'{height}px'),
+                                    profile='full', debug=False)
         self.dwg.viewbox(*self.viewbox)
+
+        # Register Inkscape namespace for layer support and inkscape:label
+        self.dwg['xmlns:inkscape'] = 'http://www.inkscape.org/namespaces/inkscape'
 
         # Add white background (covers the entire viewbox)
         self.dwg.add(self.dwg.rect(
@@ -254,12 +259,28 @@ class SVGRenderer:
             fill='white'
         ))
 
-        # Create layers as groups (bottom to top) with Y-flip transformation
+        # Create layers as proper Inkscape layers (bottom to top) with Y-flip
         # This makes positive Y point upward (mathematical convention)
-        self.layer_objects = self.dwg.add(self.dwg.g(id='objects', transform='scale(1, -1)'))
-        self.layer_graphic_symb = self.dwg.add(self.dwg.g(id='graphic_symb', transform='scale(1, -1)'))
-        self.layer_rays = self.dwg.add(self.dwg.g(id='rays', transform='scale(1, -1)'))
-        self.layer_labels = self.dwg.add(self.dwg.g(id='labels', transform='scale(1, -1)'))
+        self.layer_objects = self.dwg.add(self.dwg.g(
+            id='layer-objects',
+            transform='scale(1, -1)',
+            **{'inkscape:groupmode': 'layer', 'inkscape:label': 'Objects'}
+        ))
+        self.layer_graphic_symb = self.dwg.add(self.dwg.g(
+            id='layer-graphic-symb',
+            transform='scale(1, -1)',
+            **{'inkscape:groupmode': 'layer', 'inkscape:label': 'Graphic Annotations'}
+        ))
+        self.layer_rays = self.dwg.add(self.dwg.g(
+            id='layer-rays',
+            transform='scale(1, -1)',
+            **{'inkscape:groupmode': 'layer', 'inkscape:label': 'Rays'}
+        ))
+        self.layer_labels = self.dwg.add(self.dwg.g(
+            id='layer-labels',
+            transform='scale(1, -1)',
+            **{'inkscape:groupmode': 'layer', 'inkscape:label': 'Labels'}
+        ))
         
 
         self.center_line_pattern = "20, 5, 5, 5" 
@@ -347,16 +368,25 @@ class SVGRenderer:
         if ray.gap and not draw_gap_rays:
             return
 
-        # Create line element with id containing metadata
-        # (data-* attributes are not supported in svgwrite tiny profile)
-        ray_id = f'ray-b{ray.total_brightness:.3f}'
+        # Build id from ray uuid (guaranteed unique per segment)
+        ray_uuid = getattr(ray, 'uuid', None)
+        ray_id = f'ray-{ray_uuid}' if ray_uuid else f'ray-b{ray.total_brightness:.3f}'
+
+        # Build human-readable label for Inkscape
+        label_parts = []
         if ray.wavelength is not None:
-            ray_id += f'-w{ray.wavelength:.0f}'
+            label_parts.append(f'{ray.wavelength:.0f}nm')
+        label_parts.append(f'b={ray.total_brightness:.3f}')
+        interaction = getattr(ray, 'interaction_type', None)
+        if interaction:
+            label_parts.append(interaction)
+        ray_label = ' '.join(label_parts)
 
         if show_arrow:
             # Draw ray with arrow
             self._draw_ray_with_arrow(p1, p2, color, opacity, stroke_width,
-                                      arrow_size, arrow_position, ray_id)
+                                      arrow_size, arrow_position, ray_id,
+                                      ray_label=ray_label, ray=ray)
         else:
             # Draw simple line
             line = self.dwg.line(
@@ -365,8 +395,22 @@ class SVGRenderer:
                 stroke=color,
                 stroke_width=stroke_width,
                 stroke_opacity=opacity,
-                id=ray_id
+                id=ray_id,
             )
+            line['class'] = 'ray'
+            line['inkscape:label'] = ray_label
+
+            # data-* attributes for scripting
+            if ray_uuid:
+                line['data-uuid'] = ray_uuid
+            if ray.wavelength is not None:
+                line['data-wavelength'] = str(ray.wavelength)
+            line['data-brightness-s'] = f'{ray.brightness_s:.6f}'
+            line['data-brightness-p'] = f'{ray.brightness_p:.6f}'
+            parent_uuid = getattr(ray, 'parent_uuid', None)
+            if parent_uuid:
+                line['data-parent-uuid'] = parent_uuid
+
             self.layer_rays.add(line)
     
     def draw_centerline_segment(self,p1:dict[str,float],p2:dict[str,float], 
@@ -429,7 +473,8 @@ class SVGRenderer:
         return True    
 
     def _draw_ray_with_arrow(self, p1, p2, color, opacity, stroke_width,
-                             arrow_size, arrow_position, ray_id=None):
+                             arrow_size, arrow_position, ray_id=None,
+                             ray_label=None, ray=None):
         """
         Draw a ray segment with a direction arrow.
 
@@ -446,6 +491,8 @@ class SVGRenderer:
             arrow_size (float or None): Size of arrow head
             arrow_position (float): Position of arrow along ray (0.0-1.0)
             ray_id (str or None): Optional id for the ray group
+            ray_label (str or None): Inkscape label for the group
+            ray (Ray or None): The ray object for data-* attributes
         """
         # Calculate ray direction and length
         dx = p2['x'] - p1['x']
@@ -479,13 +526,23 @@ class SVGRenderer:
             )
             if ray_id:
                 line['id'] = ray_id
+            line['class'] = 'ray'
+            if ray_label:
+                line['inkscape:label'] = ray_label
+            if ray is not None:
+                self._attach_ray_data_attributes(line, ray)
             self.layer_rays.add(line)
             return
 
-        # Create a group for the ray with arrow
+        # Create a group for the ray with arrow — metadata goes on the group
         group = self.dwg.g()
         if ray_id:
             group['id'] = ray_id
+        group['class'] = 'ray'
+        if ray_label:
+            group['inkscape:label'] = ray_label
+        if ray is not None:
+            self._attach_ray_data_attributes(group, ray)
 
         # Calculate arrow position
         arrow_x = p1['x'] + dx * arrow_position
@@ -549,6 +606,35 @@ class SVGRenderer:
 
         self.layer_rays.add(group)
 
+    def _attach_ray_data_attributes(self, element, ray) -> None:
+        """Attach data-* attributes from a Ray object to an SVG element."""
+        ray_uuid = getattr(ray, 'uuid', None)
+        if ray_uuid:
+            element['data-uuid'] = ray_uuid
+        if ray.wavelength is not None:
+            element['data-wavelength'] = str(ray.wavelength)
+        element['data-brightness-s'] = f'{ray.brightness_s:.6f}'
+        element['data-brightness-p'] = f'{ray.brightness_p:.6f}'
+        parent_uuid = getattr(ray, 'parent_uuid', None)
+        if parent_uuid:
+            element['data-parent-uuid'] = parent_uuid
+
+    def _attach_scene_obj_metadata(self, element, scene_obj,
+                                   css_class: str = 'scene-obj') -> None:
+        """Attach id, inkscape:label, class, and data-uuid from a scene object."""
+        obj_uuid = getattr(scene_obj, 'uuid', None)
+        obj_name = getattr(scene_obj, 'name', None)
+        if obj_name is None:
+            get_name = getattr(scene_obj, 'get_display_name', None)
+            if get_name:
+                obj_name = get_name()
+        if obj_uuid:
+            element['id'] = f'{css_class}-{obj_uuid}'
+            element['data-uuid'] = obj_uuid
+        if obj_name:
+            element['inkscape:label'] = obj_name
+        element['class'] = css_class
+
     def draw_ray_with_scene_settings(self, ray, scene, base_color=(255, 0, 0),
                                      stroke_width=1.5, extend_to_edge=False):
         """
@@ -595,7 +681,7 @@ class SVGRenderer:
             show_arrow=scene.show_ray_arrows
         )
 
-    def draw_point(self, point, color='black', radius=3, label=None):
+    def draw_point(self, point, color='black', radius=3, label=None, scene_obj=None):
         """
         Draw a point (circle).
 
@@ -604,6 +690,7 @@ class SVGRenderer:
             color (str): Fill color (default: 'black')
             radius (float): Circle radius in pixels (default: 3)
             label (str or None): Optional text label to show near point
+            scene_obj: Optional scene object for simulation metadata.
         """
         point = self._normalize_point(point)
 
@@ -612,6 +699,10 @@ class SVGRenderer:
             r=radius,
             fill=color
         )
+
+        if scene_obj is not None:
+            self._attach_scene_obj_metadata(circle, scene_obj, css_class='point')
+
         self.layer_objects.add(circle)
 
         if label:
@@ -625,7 +716,8 @@ class SVGRenderer:
             )
             self.layer_labels.add(text)
 
-    def draw_line_segment(self, p1, p2, color='gray', stroke_width=2, label=None):
+    def draw_line_segment(self, p1, p2, color='gray', stroke_width=2, label=None,
+                          scene_obj=None):
         """
         Draw a line segment (for optical elements like lenses, mirrors).
 
@@ -635,6 +727,7 @@ class SVGRenderer:
             color (str): Stroke color (default: 'gray')
             stroke_width (float): Line width in pixels (default: 2)
             label (str or None): Optional text label
+            scene_obj: Optional scene object for simulation metadata.
         """
         p1 = self._normalize_point(p1)
         p2 = self._normalize_point(p2)
@@ -645,6 +738,10 @@ class SVGRenderer:
             stroke=color,
             stroke_width=stroke_width
         )
+
+        if scene_obj is not None:
+            self._attach_scene_obj_metadata(line, scene_obj, css_class='line-segment')
+
         self.layer_objects.add(line)
 
         if label:
@@ -662,7 +759,8 @@ class SVGRenderer:
             )
             self.layer_labels.add(text)
 
-    def draw_lens(self, p1, p2, focal_length, color='blue', label=None):
+    def draw_lens(self, p1, p2, focal_length, color='blue', label=None,
+                  scene_obj=None):
         """
         Draw an ideal lens with arrows indicating converging/diverging.
 
@@ -672,12 +770,14 @@ class SVGRenderer:
             focal_length (float): Focal length (positive=converging, negative=diverging)
             color (str): Color for lens (default: 'blue')
             label (str or None): Optional label
+            scene_obj: Optional scene object for simulation metadata.
         """
         p1 = self._normalize_point(p1)
         p2 = self._normalize_point(p2)
 
-        # Draw the main line
-        self.draw_line_segment(p1, p2, color=color, stroke_width=3)
+        # Draw the main line (pass scene_obj so metadata attaches to it)
+        self.draw_line_segment(p1, p2, color=color, stroke_width=3,
+                               scene_obj=scene_obj)
 
         # Calculate perpendicular direction
         dx = p2['x'] - p1['x']
@@ -749,7 +849,7 @@ class SVGRenderer:
         self.layer_objects.add(polygon)
 
     def draw_glass_path(self, path, fill='cyan', fill_opacity=0.3, stroke='navy',
-                       stroke_width=2, label=None):
+                       stroke_width=2, label=None, glass_obj=None):
         """
         Draw a Glass object with arbitrary path (lines and arcs).
 
@@ -765,6 +865,8 @@ class SVGRenderer:
             stroke (str): Stroke color (default: 'navy')
             stroke_width (float): Stroke width in pixels (default: 2)
             label (str or None): Optional label at center
+            glass_obj: Optional Glass object for simulation metadata
+                (id, inkscape:label, class, data-uuid).
 
         Note:
             The arc interpretation matches glass.py: when path[i+1].arc is True,
@@ -831,6 +933,11 @@ class SVGRenderer:
             stroke=stroke,
             stroke_width=stroke_width
         )
+
+        # Add simulation metadata if glass_obj is provided
+        if glass_obj is not None:
+            self._attach_scene_obj_metadata(glass_path, glass_obj, css_class='glass')
+
         self.layer_objects.add(glass_path)
 
         # Add label at center if provided
@@ -942,6 +1049,55 @@ class SVGRenderer:
                 transform='scale(1, -1)'  # Flip text back to be readable
             )
             self.layer_labels.add(text)
+
+    def draw_glass_edge_overlays(self, glass_obj, stroke: str = 'none',
+                                 stroke_width: float = 0) -> bool:
+        """
+        Add invisible overlay elements for each labeled edge of a glass object.
+
+        These elements carry edge metadata (id, inkscape:label, data-* attributes)
+        and can be selected in Inkscape to find specific edges. They are drawn
+        with no visible stroke by default (purely for metadata), but can be made
+        visible for debugging.
+
+        Args:
+            glass_obj: A Glass object with uuid, name, and edge_labels.
+            stroke (str): Stroke color for overlays (default: 'none' = invisible).
+            stroke_width (float): Stroke width for overlays (default: 0).
+
+        Returns:
+            bool: True on success.
+        """
+        from ..analysis.glass_geometry import get_edge_descriptions
+
+        edges = get_edge_descriptions(glass_obj)
+        obj_uuid = getattr(glass_obj, 'uuid', '')
+        obj_name = (getattr(glass_obj, 'name', None)
+                    or getattr(glass_obj, 'get_display_name', lambda: obj_uuid[:12])())
+
+        edge_group = self.dwg.g(
+            id=f'edges-{obj_uuid}',
+        )
+        edge_group['inkscape:label'] = f'Edges: {obj_name}'
+        edge_group['class'] = 'glass-edges'
+
+        for edge in edges:
+            line = self.dwg.line(
+                start=(edge.p1.x, edge.p1.y),
+                end=(edge.p2.x, edge.p2.y),
+                stroke=stroke,
+                stroke_width=stroke_width,
+            )
+            line['id'] = f'{obj_uuid}-edge-{edge.index}'
+            line['inkscape:label'] = edge.short_label or f'edge-{edge.index}'
+            line['class'] = 'glass-edge'
+            line['data-edge-index'] = str(edge.index)
+            if edge.long_label:
+                line['data-long-label'] = edge.long_label
+            edge_group.add(line)
+
+        self.layer_objects.add(edge_group)
+        return True
 
     def _calculate_arc_center(self, pt1, pt2, pt3):
         """
@@ -1183,7 +1339,9 @@ if __name__ == "__main__":
     print("\nTest 6: Draw ray segments")
     # Mock Ray class for testing
     class MockRay:
+        _counter = 0
         def __init__(self, p1, p2, brightness_s=1.0, brightness_p=0.0, wavelength=None, gap=False):
+            MockRay._counter += 1
             self.p1 = p1
             self.p2 = p2
             self.brightness_s = brightness_s
@@ -1191,6 +1349,9 @@ if __name__ == "__main__":
             self.wavelength = wavelength
             self.gap = gap
             self.total_brightness = brightness_s + brightness_p
+            self.uuid = f'mock-{MockRay._counter:04d}'
+            self.interaction_type = 'source'
+            self.parent_uuid = None
 
     # Normal ray
     ray1 = MockRay({'x': 10, 'y': 100}, {'x': 90, 'y': 100})
@@ -1237,12 +1398,12 @@ if __name__ == "__main__":
     print("\nTest 9: Get SVG as string")
     svg_string = renderer.to_string()
     print(f"  SVG string length: {len(svg_string)} characters")
-    objects_present = 'id="objects"' in svg_string
-    rays_present = 'id="rays"' in svg_string
-    labels_present = 'id="labels"' in svg_string
-    print(f"  Contains 'objects' layer: {objects_present}")
-    print(f"  Contains 'rays' layer: {rays_present}")
-    print(f"  Contains 'labels' layer: {labels_present}")
+    objects_present = 'id="layer-objects"' in svg_string
+    rays_present = 'id="layer-rays"' in svg_string
+    labels_present = 'id="layer-labels"' in svg_string
+    print(f"  Contains 'layer-objects' layer: {objects_present}")
+    print(f"  Contains 'layer-rays' layer: {rays_present}")
+    print(f"  Contains 'layer-labels' layer: {labels_present}")
 
     # Test 10: Complete example scene
     print("\nTest 10: Create a complete example scene")

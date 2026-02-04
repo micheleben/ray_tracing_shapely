@@ -16,6 +16,8 @@ from ray_tracing_shapely.core.simulator import Simulator
 from ray_tracing_shapely.core.svg_renderer import SVGRenderer
 from ray_tracing_shapely.core.scene_objs.glass.glass import Glass
 from ray_tracing_shapely.core.scene_objs.light_source.single_ray import SingleRay
+from ray_tracing_shapely.core.ray import Ray
+
 
 def save_csv(ray_segments, output_dir):
     # Export ray data to CSV
@@ -395,6 +397,8 @@ def coupled_through_3rd_element_demo(
     scene.add_object(medium)
     scene.add_object(ill_prism)
 
+    scene.auto_label_all_glass_cardinal()
+
     # add the ray sources
     ray_list: List[SingleRay] = []
     for ray in dict_ray:
@@ -420,19 +424,21 @@ def coupled_through_3rd_element_demo(
     # Render
     renderer = SVGRenderer(width=800, height=600, viewbox=(0, 0, 300, 200))
     # draw measuring prism
-    renderer.draw_line_segment(meas_prism.path[0], meas_prism.path[1], color='blue', stroke_width=2, label='Prism')
-    renderer.draw_line_segment(meas_prism.path[1], meas_prism.path[2], color='blue', stroke_width=2)
-    renderer.draw_line_segment(meas_prism.path[2], meas_prism.path[0], color='blue', stroke_width=2)
+    renderer.draw_line_segment(meas_prism.path[0], meas_prism.path[1], color='blue', stroke_width=2, label='Prism', scene_obj=meas_prism)
+    renderer.draw_line_segment(meas_prism.path[1], meas_prism.path[2], color='blue', stroke_width=2, scene_obj=meas_prism)
+    renderer.draw_line_segment(meas_prism.path[2], meas_prism.path[0], color='blue', stroke_width=2, scene_obj=meas_prism)
 
     # draw medium
-    renderer.draw_line_segment(medium.path[0], medium.path[1], color='green', stroke_width=2, label='Medium')
-    renderer.draw_line_segment(medium.path[1], medium.path[2], color='green', stroke_width=2)
-    renderer.draw_line_segment(medium.path[2], medium.path[3], color='green', stroke_width=2)
-    renderer.draw_line_segment(medium.path[3], medium.path[0], color='green', stroke_width=2)
+    renderer.draw_line_segment(medium.path[0], medium.path[1], color='green', stroke_width=2, label='Medium', scene_obj=medium)
+    renderer.draw_line_segment(medium.path[1], medium.path[2], color='green', stroke_width=2, scene_obj=medium)
+    renderer.draw_line_segment(medium.path[2], medium.path[3], color='green', stroke_width=2, scene_obj=medium)
+    renderer.draw_line_segment(medium.path[3], medium.path[0], color='green', stroke_width=2, scene_obj=medium)
     # draw illumination prism
-    renderer.draw_line_segment(ill_prism.path[0], ill_prism.path[1], color='blue', stroke_width=2, label='Prism')
-    renderer.draw_line_segment(ill_prism.path[1], ill_prism.path[2], color='blue', stroke_width=2)
-    renderer.draw_line_segment(ill_prism.path[2], ill_prism.path[0], color='blue', stroke_width=2)
+    renderer.draw_line_segment(ill_prism.path[0], ill_prism.path[1], color='blue', stroke_width=2, label='Prism', scene_obj=ill_prism)
+    renderer.draw_line_segment(ill_prism.path[1], ill_prism.path[2], color='blue', stroke_width=2, scene_obj=ill_prism)
+    renderer.draw_line_segment(ill_prism.path[2], ill_prism.path[0], color='blue', stroke_width=2, scene_obj=ill_prism)
+
+    renderer.draw_glass_edge_labels(meas_prism)
 
     for seg in segments:
         # Use draw_ray_with_scene_settings to respect color_mode settings

@@ -135,6 +135,13 @@ self.layer_objects = self.dwg.add(self.dwg.g(
 
 - Generate an SVG with the current examples (e.g. `tir_demo.py`), open in Inkscape, confirm the four layers appear in the Layers panel with readable names.
 
+### Implementation notes (completed)
+
+- `profile='full'` with `debug=False` was required. The `Full11Validator` in svgwrite rejects `xmlns:inkscape` as an unknown attribute even in full profile. Setting `debug=False` disables this strict validation while still producing valid SVG with the full profile baseline.
+- All four layers renamed: `objects` → `layer-objects`, `graphic_symb` → `layer-graphic-symb`, `rays` → `layer-rays`, `labels` → `layer-labels`.
+- Each layer group now has `inkscape:groupmode='layer'` and `inkscape:label` with human-readable names (`Objects`, `Graphic Annotations`, `Rays`, `Labels`).
+- `__main__` test block updated to check for `'id="layer-objects"'` etc.
+
 ---
 
 ## Phase 1: Ray segment metadata
@@ -210,6 +217,14 @@ In the Layers & Objects panel, expanding the "Rays" layer shows:
 
 Each item is clickable and highlights the corresponding ray on the canvas.
 
+### Implementation notes (completed)
+
+- `draw_ray_segment`: ray `id` now uses `ray-{uuid}` (falls back to `ray-b{brightness}` if uuid missing). Added `inkscape:label` with format `"{wavelength}nm b={brightness} {interaction_type}"`, `class='ray'`, and `data-*` attributes (`data-uuid`, `data-wavelength`, `data-brightness-s`, `data-brightness-p`, `data-parent-uuid`).
+- `_draw_ray_with_arrow`: signature extended with `ray_label` and `ray` params. Metadata attaches to the `<g>` group (or to the fallback `<line>` when arrow is too small). Child elements inside the group carry no ids.
+- A new private helper `_attach_ray_data_attributes(element, ray)` extracts and attaches all `data-*` attributes from a Ray, used by both code paths.
+- `MockRay` in `__main__` test block updated with `uuid`, `interaction_type`, and `parent_uuid` attributes.
+- **No signature changes** to public methods. Existing call sites continue to work unchanged.
+
 ---
 
 ## Phase 2: Scene object metadata
@@ -255,6 +270,15 @@ renderer.draw_glass_path(prism.path, fill='cyan', label='Prism')
 # After (backward compatible -- old calls still work)
 renderer.draw_glass_path(prism.path, fill='cyan', label='Prism', glass_obj=prism)
 ```
+
+### Implementation notes (completed)
+
+- `draw_glass_path`: added optional `glass_obj=None` parameter. When provided, attaches `id="glass-{uuid}"`, `inkscape:label="{name}"`, `class="glass"`, and `data-uuid`.
+- `draw_point`: added optional `scene_obj=None`. Attaches `id="point-{uuid}"`, `inkscape:label`, `class="point"`, `data-uuid`.
+- `draw_line_segment`: added optional `scene_obj=None`. Attaches `id="line-segment-{uuid}"`, `inkscape:label`, `class="line-segment"`, `data-uuid`.
+- `draw_lens`: added optional `scene_obj=None`. Passes it through to `draw_line_segment` for the main lens line, so metadata attaches to the primary line element.
+- A new private helper `_attach_scene_obj_metadata(element, scene_obj, css_class)` handles all scene object metadata attachment (id, inkscape:label, class, data-uuid). It uses `getattr` for `uuid`, `name`, and `get_display_name()` to work with any scene object type.
+- All new parameters default to `None` — **fully backward compatible**.
 
 ---
 
@@ -320,6 +344,15 @@ Each edge label is selectable. When selected, it highlights the edge on the canv
 ### Note on arc edges
 
 `get_edge_descriptions` returns `p1` and `p2` for each edge. For line edges, a `<line>` overlay is exact. For arc edges, the overlay would be a straight-line approximation of the arc. If precise arc overlays are needed, this can be extended later using the same arc calculation from `draw_glass_path`. For metadata/navigation purposes, the straight-line approximation is sufficient.
+
+### Implementation notes (completed)
+
+- New method `draw_glass_edge_overlays(glass_obj, stroke='none', stroke_width=0) -> bool` added.
+- Uses a lazy import: `from ..analysis.glass_geometry import get_edge_descriptions` inside the method body. This avoids a `core` → `analysis` import at module level and eliminates circular import risk.
+- Creates a `<g>` group with `id="edges-{uuid}"`, `inkscape:label="Edges: {name}"`, `class="glass-edges"`.
+- Each edge is a `<line>` with `id="{uuid}-edge-{index}"`, `inkscape:label="{short_label}"`, `class="glass-edge"`, `data-edge-index`, and `data-long-label`.
+- Default stroke is `'none'` (invisible) — overlays exist purely for metadata/navigation. Pass a visible stroke for debugging.
+- Arc edges use the straight-line `p1`→`p2` approximation as noted above.
 
 ---
 
