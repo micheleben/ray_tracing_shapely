@@ -1095,13 +1095,15 @@ class SVGRenderer:
         t = min(t_values)  # Use minimum t to get first edge intersection
         return {'x': p1['x'] + dx * t, 'y': p1['y'] + dy * t}
 
-    def save(self, filename):
+    def save(self, filename:str=None):
         """
         Save the SVG to a file.
 
         Args:
             filename (str): Output filename (e.g., 'output.svg')
         """
+        if filename is None:
+            filename = "output.svg"
         self.dwg.saveas(filename)
 
     def to_string(self):
