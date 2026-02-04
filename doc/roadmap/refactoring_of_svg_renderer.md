@@ -826,6 +826,21 @@ The exact mechanism depends on the framework:
 
 The agentic tools don't need to know about the display mechanism -- they just produce the SVG string.
 
+### Implementation notes (completed)
+
+- All 5 SVG rendering tools implemented in `agentic_tools.py`, following the existing context-based pattern:
+  1. `render_scene_svg(width, height, viewbox)` — baseline full-scene rendering via `draw_scene`.
+  2. `highlight_rays_inside_glass_svg(glass_name, highlight_color, width, height, viewbox)` — composes `find_rays_inside_glass` + `draw_scene_with_highlights`. Also highlights the glass object itself via `highlight_glass_names`.
+  3. `highlight_rays_crossing_edge_svg(glass_name, edge_label, highlight_color, width, height, viewbox)` — composes `find_rays_crossing_edge` + `draw_scene_with_highlights`. Also highlights the edge via `highlight_edge_specs`.
+  4. `highlight_rays_by_polarization_svg(min_dop, max_dop, highlight_color, width, height, viewbox)` — composes `find_rays_by_polarization` + `draw_scene_with_highlights`.
+  5. `highlight_custom_rays_svg(ray_uuids_csv, highlight_color, width, height, viewbox)` — generic escape hatch; accepts comma-separated uuids.
+- **Viewbox auto-computation**: Two private helpers added:
+  - `_compute_scene_bounds(scene)` iterates over `scene.objs`, collecting coordinates from `path`, `p1`/`p2`, and `x`/`y` attributes. Returns `(min_x, min_y, width, height)` with 5% padding.
+  - `_parse_viewbox(viewbox_str, scene)` accepts either `"auto"` (delegates to `_compute_scene_bounds`) or `"min_x,min_y,w,h"` (parses to tuple).
+- **SVGRenderer import**: All 5 tools use a lazy import (`from ..core.svg_renderer import SVGRenderer`) inside the function body. This avoids a `analysis` → `core` import at module level and keeps the module lightweight when only the XML tools are needed.
+- **Tool registry updated**: All 5 SVG tools added to `_REGISTRY` in `tool_registry.py` and to `get_agentic_tools()`. Total agentic tools: 9 (4 XML query + 5 SVG rendering).
+- **`generate_tool_note_for_solveit_notebook()`** automatically includes the new tools.
+
 ---
 
 ## Updated implementation order

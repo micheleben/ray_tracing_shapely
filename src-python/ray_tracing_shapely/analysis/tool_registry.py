@@ -335,6 +335,41 @@ _REGISTRY: List[Dict[str, str]] = [
         'signature': '(min_dop=0, max_dop=1) -> str',
         'description': 'Filter rays by degree of polarization, return XML string',
     },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'render_scene_svg',
+        'kind': 'function',
+        'signature': '(width=800, height=600, viewbox="auto") -> str',
+        'description': 'Render the full scene and rays as an SVG string',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'highlight_rays_inside_glass_svg',
+        'kind': 'function',
+        'signature': '(glass_name, highlight_color="yellow", width=800, height=600, viewbox="auto") -> str',
+        'description': 'Render scene with rays inside a glass highlighted, return SVG string',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'highlight_rays_crossing_edge_svg',
+        'kind': 'function',
+        'signature': '(glass_name, edge_label, highlight_color="yellow", width=800, height=600, viewbox="auto") -> str',
+        'description': 'Render scene with rays crossing an edge highlighted, return SVG string',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'highlight_rays_by_polarization_svg',
+        'kind': 'function',
+        'signature': '(min_dop=0, max_dop=1, highlight_color="magenta", width=800, height=600, viewbox="auto") -> str',
+        'description': 'Render scene with rays filtered by polarization highlighted, return SVG string',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'highlight_custom_rays_svg',
+        'kind': 'function',
+        'signature': '(ray_uuids_csv, highlight_color="yellow", width=800, height=600, viewbox="auto") -> str',
+        'description': 'Render scene with specific rays (by uuid) highlighted, return SVG string',
+    },
     # -------------------------------------------------------------------------
     # analysis.tool_registry -- Tool discovery
     # -------------------------------------------------------------------------
@@ -429,6 +464,11 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         find_rays_crossing_edge_xml,
         find_rays_by_angle_to_edge_xml,
         find_rays_by_polarization_xml,
+        render_scene_svg,
+        highlight_rays_inside_glass_svg,
+        highlight_rays_crossing_edge_svg,
+        highlight_rays_by_polarization_svg,
+        highlight_custom_rays_svg,
     )
 
     return [
@@ -451,6 +491,31 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
             'name': 'find_rays_by_polarization_xml',
             'function': find_rays_by_polarization_xml,
             'description': 'Filter rays by degree of polarization, return XML string',
+        },
+        {
+            'name': 'render_scene_svg',
+            'function': render_scene_svg,
+            'description': 'Render the full scene and rays as an SVG string',
+        },
+        {
+            'name': 'highlight_rays_inside_glass_svg',
+            'function': highlight_rays_inside_glass_svg,
+            'description': 'Render scene with rays inside a glass highlighted, return SVG string',
+        },
+        {
+            'name': 'highlight_rays_crossing_edge_svg',
+            'function': highlight_rays_crossing_edge_svg,
+            'description': 'Render scene with rays crossing an edge highlighted, return SVG string',
+        },
+        {
+            'name': 'highlight_rays_by_polarization_svg',
+            'function': highlight_rays_by_polarization_svg,
+            'description': 'Render scene with rays filtered by polarization highlighted, return SVG string',
+        },
+        {
+            'name': 'highlight_custom_rays_svg',
+            'function': highlight_custom_rays_svg,
+            'description': 'Render scene with specific rays (by uuid) highlighted, return SVG string',
         },
     ]
 

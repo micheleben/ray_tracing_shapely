@@ -34,7 +34,7 @@ Usage:
 """
 
 from __future__ import annotations
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 
 from .ray_geometry_queries import (
     get_object_by_name,
@@ -226,3 +226,293 @@ def find_rays_by_polarization_xml(
     _, segments = _require_context()
     rays = find_rays_by_polarization(segments, min_dop=min_dop, max_dop=max_dop)
     return rays_to_xml(rays)
+
+
+# =============================================================================
+# Viewbox helpers
+# =============================================================================
+
+_VIEWBOX_PADDING_FACTOR = 0.05  # 5% padding on each side
+
+
+def _compute_scene_bounds(scene: 'Scene') -> Tuple[float, float, float, float]:
+    """
+    Compute a bounding box (min_x, min_y, width, height) from all scene objects.
+
+    Iterates over scene.objs and collects coordinates from paths, p1/p2
+    endpoints, and point-source x/y attributes.
+
+    Returns:
+        (min_x, min_y, width, height) in Y-up coordinates with 5% padding.
+    """
+    xs: List[float] = []
+    ys: List[float] = []
+
+    for obj in scene.objs:
+        if hasattr(obj, 'path') and hasattr(obj.path, '__len__'):
+            for pt in obj.path:
+                xs.append(pt['x'])
+                ys.append(pt['y'])
+        if hasattr(obj, 'p1'):
+            xs.append(obj.p1['x'])
+            ys.append(obj.p1['y'])
+        if hasattr(obj, 'p2'):
+            xs.append(obj.p2['x'])
+            ys.append(obj.p2['y'])
+        if hasattr(obj, 'x') and hasattr(obj, 'y'):
+            xs.append(obj.x)
+            ys.append(obj.y)
+
+    if not xs:
+        return (0, 0, 800, 600)
+
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    w = max_x - min_x
+    h = max_y - min_y
+    # Avoid zero-size viewbox
+    if w < 1e-6:
+        w = 100
+    if h < 1e-6:
+        h = 100
+
+    pad_x = w * _VIEWBOX_PADDING_FACTOR
+    pad_y = h * _VIEWBOX_PADDING_FACTOR
+    return (min_x - pad_x, min_y - pad_y, w + 2 * pad_x, h + 2 * pad_y)
+
+
+def _parse_viewbox(
+    viewbox_str: str,
+    scene: 'Scene',
+) -> Tuple[float, float, float, float]:
+    """
+    Parse a viewbox string into a (min_x, min_y, width, height) tuple.
+
+    Accepts either ``"auto"`` (computes bounds from the scene) or a
+    comma-separated string like ``"0,0,400,300"``.
+
+    Args:
+        viewbox_str: ``"auto"`` or ``"min_x,min_y,width,height"``.
+        scene: The Scene object (used when viewbox_str is ``"auto"``).
+
+    Returns:
+        Tuple of (min_x, min_y, width, height).
+    """
+    if viewbox_str == 'auto':
+        return _compute_scene_bounds(scene)
+    parts = [float(v.strip()) for v in viewbox_str.split(',')]
+    if len(parts) != 4:
+        raise ValueError(
+            f"viewbox must be 'auto' or 'min_x,min_y,w,h', got: {viewbox_str!r}"
+        )
+    return tuple(parts)
+
+
+# =============================================================================
+# SVG rendering tools (Phase 7)
+# =============================================================================
+
+def render_scene_svg(
+    width: int = 800,
+    height: int = 600,
+    viewbox: str = 'auto',
+) -> str:
+    """
+    Render the full scene and all rays as an SVG string.
+
+    This is the baseline rendering — no highlights, just the scene as-is.
+    Useful as a "show me the current state" tool.
+
+    Args:
+        width: SVG width in pixels.
+        height: SVG height in pixels.
+        viewbox: Viewbox as "min_x,min_y,width,height" or "auto" to compute
+            from scene bounds.
+
+    Returns:
+        SVG string.
+
+    Raises:
+        RuntimeError: If set_context() has not been called.
+    """
+    from ..core.svg_renderer import SVGRenderer
+
+    scene, segments = _require_context()
+    vb = _parse_viewbox(viewbox, scene)
+    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+    renderer.draw_scene(scene, segments)
+    return renderer.to_string()
+
+
+def highlight_rays_inside_glass_svg(
+    glass_name: str,
+    highlight_color: str = 'yellow',
+    width: int = 800,
+    height: int = 600,
+    viewbox: str = 'auto',
+) -> str:
+    """
+    Render the scene with rays inside a glass object highlighted.
+
+    Combines find_rays_inside_glass() with highlight rendering.
+
+    Args:
+        glass_name: Name of the glass object.
+        highlight_color: CSS color for highlighted rays.
+        width: SVG width in pixels.
+        height: SVG height in pixels.
+        viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
+
+    Returns:
+        SVG string with highlighted rays.
+
+    Raises:
+        RuntimeError: If set_context() has not been called.
+        ValueError: If glass_name doesn't match any object.
+    """
+    from ..core.svg_renderer import SVGRenderer
+
+    scene, segments = _require_context()
+    glass = get_object_by_name(scene, glass_name)
+    rays = find_rays_inside_glass(segments, glass)
+    ray_uuids = {r.uuid for r in rays}
+
+    vb = _parse_viewbox(viewbox, scene)
+    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+    renderer.draw_scene_with_highlights(
+        scene, segments,
+        highlight_ray_uuids=ray_uuids,
+        highlight_glass_names=[glass_name],
+        highlight_color=highlight_color,
+    )
+    return renderer.to_string()
+
+
+def highlight_rays_crossing_edge_svg(
+    glass_name: str,
+    edge_label: str,
+    highlight_color: str = 'yellow',
+    width: int = 800,
+    height: int = 600,
+    viewbox: str = 'auto',
+) -> str:
+    """
+    Render the scene with rays crossing a specific edge highlighted.
+
+    Combines find_rays_crossing_edge() with highlight rendering.
+    Also highlights the edge itself.
+
+    Args:
+        glass_name: Name of the glass object.
+        edge_label: Label of the edge (short_label, long_label, or index).
+        highlight_color: CSS color for highlighted rays.
+        width: SVG width in pixels.
+        height: SVG height in pixels.
+        viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
+
+    Returns:
+        SVG string with highlighted rays and edge.
+
+    Raises:
+        RuntimeError: If set_context() has not been called.
+        ValueError: If glass_name or edge_label doesn't match.
+    """
+    from ..core.svg_renderer import SVGRenderer
+
+    scene, segments = _require_context()
+    glass = get_object_by_name(scene, glass_name)
+    rays = find_rays_crossing_edge(segments, glass, edge_label)
+    ray_uuids = {r.uuid for r in rays}
+
+    vb = _parse_viewbox(viewbox, scene)
+    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+    renderer.draw_scene_with_highlights(
+        scene, segments,
+        highlight_ray_uuids=ray_uuids,
+        highlight_edge_specs=[(glass_name, edge_label)],
+        highlight_color=highlight_color,
+    )
+    return renderer.to_string()
+
+
+def highlight_rays_by_polarization_svg(
+    min_dop: float = 0.0,
+    max_dop: float = 1.0,
+    highlight_color: str = 'magenta',
+    width: int = 800,
+    height: int = 600,
+    viewbox: str = 'auto',
+) -> str:
+    """
+    Render the scene with rays filtered by degree of polarization highlighted.
+
+    Args:
+        min_dop: Minimum degree of polarization (0-1).
+        max_dop: Maximum degree of polarization (0-1).
+        highlight_color: CSS color for highlighted rays.
+        width: SVG width in pixels.
+        height: SVG height in pixels.
+        viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
+
+    Returns:
+        SVG string with highlighted rays.
+
+    Raises:
+        RuntimeError: If set_context() has not been called.
+    """
+    from ..core.svg_renderer import SVGRenderer
+
+    scene, segments = _require_context()
+    rays = find_rays_by_polarization(segments, min_dop=min_dop, max_dop=max_dop)
+    ray_uuids = {r.uuid for r in rays}
+
+    vb = _parse_viewbox(viewbox, scene)
+    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+    renderer.draw_scene_with_highlights(
+        scene, segments,
+        highlight_ray_uuids=ray_uuids,
+        highlight_color=highlight_color,
+    )
+    return renderer.to_string()
+
+
+def highlight_custom_rays_svg(
+    ray_uuids_csv: str,
+    highlight_color: str = 'yellow',
+    width: int = 800,
+    height: int = 600,
+    viewbox: str = 'auto',
+) -> str:
+    """
+    Render the scene with a specific set of rays highlighted by uuid.
+
+    This is the escape hatch: the agent can compose arbitrary queries,
+    collect uuids, and pass them here for visualization.
+
+    Args:
+        ray_uuids_csv: Comma-separated ray uuids to highlight.
+        highlight_color: CSS color for highlighted rays.
+        width: SVG width in pixels.
+        height: SVG height in pixels.
+        viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
+
+    Returns:
+        SVG string.
+
+    Raises:
+        RuntimeError: If set_context() has not been called.
+    """
+    from ..core.svg_renderer import SVGRenderer
+
+    scene, segments = _require_context()
+    ray_uuids = set(u.strip() for u in ray_uuids_csv.split(',') if u.strip())
+
+    vb = _parse_viewbox(viewbox, scene)
+    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+    renderer.draw_scene_with_highlights(
+        scene, segments,
+        highlight_ray_uuids=ray_uuids,
+        highlight_color=highlight_color,
+    )
+    return renderer.to_string()
