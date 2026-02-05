@@ -88,6 +88,20 @@ Variable-angle prisms require explicit angle parameters:
 
 The `BasePrism` API should reflect this distinction: fixed-angle subclasses need only a `from_size()` constructor, while variable-angle subclasses expose angle parameters.
 
+### Implementation phases (summary)
+
+| Phase | Goal |
+|-------|------|
+| **Phase 1** | Foundation: directory structure, `BasePrism` base class, dual-labeling, core utilities |
+| **Phase 2** | `EquilateralPrism` — symmetric 60-60-60, easiest to validate |
+| **Phase 3** | `RightAnglePrism` — 45-90-45 for TIR applications |
+| **Phase 4** | `RefractometerPrism` — physics-driven trapezoid with multiple constructors |
+| **Phase 5** | Factory functions and convenience API |
+| **Phase 6** | Testing |
+| **Phase 7** | Examples |
+
+Additional prism types (WedgePrism, DovePrism, PellinBrocaPrism, etc.) are deferred to future phases.
+
 ---
 
 ### Coding style conventions
@@ -143,16 +157,22 @@ Each `BasePrism` subclass defines a class-level `_edge_roles` list that maps edg
 ```
 Vertex layout (before rotation):
 
+Coordinate system: +X = East, +Y = North
+
+                     N
+                     ↑
     V2 (right angle, 90°)
     |\
     | \
-    |  \   ← Edge 1: Hypotenuse (H)
+    |  \   ← Edge 1: Hypotenuse (H) — cardinal: East (E)
     |   \
     |    \
-    V0----V1
-      Edge 0: Entrance Face (E)
+    V0----V1  → E
+      Edge 0: Entrance Face (E) — cardinal: South (S)
 
-Edge 2 (V2→V0): Exit Face (X)
+Edge 2 (V2→V0): Exit Face (X) — cardinal: West (W)
+
+Vertex traversal V0→V1→V2→V0 is counterclockwise (positive signed area).
 ```
 
 | Edge | Short | Long             | Notes                          |
@@ -171,12 +191,20 @@ Edge 2 (V2→V0): Exit Face (X)
 ```
 Vertex layout (before rotation):
 
-        V2 (apex, top)
+Coordinate system: +X = East, +Y = North
+
+                 N
+                 ↑
+        V2 (apex, top) — Apex vertex (A)
        / \
-      /   \
+      /   \   ← Edge 1: Exit Face (X) — cardinal: NE
      /     \
-    V0-----V1
-      Base (B)
+    V0-----V1  → E
+      Edge 0: Base (B) — cardinal: South (S)
+
+Edge 2 (V2→V0): Entrance Face (E) — cardinal: NW
+
+Vertex traversal V0→V1→V2→V0 is counterclockwise (positive signed area).
 ```
 
 | Edge | Short | Long             | Notes                              |
@@ -245,14 +273,7 @@ For a truncated wedge (trapezoid):
 | 2    | `M`   | Measuring Surface  | Sample contact / TIR boundary      |
 | 3    | `E`   | Entrance Face      | Refracting surface                 |
 
-#### PellinBrocaPrism (4 edges)
 
-| Edge | Short | Long                 | Notes                          |
-|------|-------|----------------------|--------------------------------|
-| 0    | `E`   | Entrance Face        | 90° angle corner               |
-| 1    | `R1`  | First Reflecting     | Internal reflecting surface    |
-| 2    | `X`   | Exit Face            | 90° deviation output           |
-| 3    | `R2`  | Second Reflecting    | Internal reflecting surface    |
 
 ### Implementation
 
@@ -367,14 +388,14 @@ ray_tracing_shapely/
 │   │   ├── base_prism.py    # BasePrism class (dual labeling, _compute_path)
 │   │   ├── prism_utils.py   # deviation, dispersion, geometry utilities
 │   │   ├── tir_utils.py     # critical angle, refractometer design utilities
-│   │   ├── right_angle.py   # 45-90-45 prism
-│   │   ├── equilateral.py   # 60-60-60 prism
-│   │   ├── refractometer.py # Refractometer / measuring prism
-│   │   ├── dove.py          # Dove prism
-│   │   ├── wedge.py         # Wedge / Risley prisms
-│   │   ├── pellin_broca.py  # Pellin-Broca prism
-│   │   ├── coupling.py      # Coupling prism
-│   │   └── ophthalmic.py    # Ophthalmic wedge prism
+│   │   ├── equilateral.py   # 60-60-60 prism (Phase 2)
+│   │   ├── right_angle.py   # 45-90-45 prism (Phase 3)
+│   │   └── refractometer.py # Refractometer / measuring prism (Phase 4)
+│   │   # Future files (deferred):
+│   │   # ├── wedge.py         # Wedge / Risley prisms
+│   │   # ├── dove.py          # Dove prism
+│   │   # ├── pellin_broca.py  # Pellin-Broca prism
+│   │   # └── ...
 │   └── lenses/              # future sub-module
 ```
 
@@ -438,7 +459,19 @@ class BasePrism(Glass):
         vertices: List[Tuple[float, float]],
         n: float = 1.5
     ) -> 'BasePrism':
-        """Create from explicit vertex coordinates (escape hatch)."""
+        """
+        Create from explicit vertex coordinates (escape hatch).
+
+        Contract:
+        - This method lives on BasePrism only. Subclasses inherit but do not override.
+        - Functional labels (_edge_roles, _vertex_roles) are NOT applied, because
+          the geometry may not match the subclass's expected angles.
+        - Cardinal labels ARE applied via auto_label_cardinal().
+        - The returned instance has numeric edge labels (0, 1, 2, ...) for the
+          functional layer.
+        - Use this when you have a custom geometry that doesn't fit standard
+          prism templates but still want dual-labeling infrastructure.
+        """
         ...
 ```
 
@@ -450,29 +483,57 @@ The `position` parameter needs a defined reference point. Different use cases fa
 
 Each subclass documents which vertex is the "apex" for `anchor='apex'` mode.
 
+### `apex_vertex` property
+
+```python
+@property
+def apex_vertex(self) -> Optional[Tuple[float, float]]:
+    """
+    Return the coordinates of the apex vertex, or None if the prism has no unique apex.
+
+    The apex is defined as the vertex with the smallest interior angle, or the
+    vertex explicitly designated by the subclass. For prisms with multiple
+    equal-smallest angles (e.g., equilateral), the subclass defines which vertex
+    is considered the "apex" for positioning purposes.
+
+    Subclasses override _apex_vertex_index to specify which vertex is the apex:
+      - EquilateralPrism: vertex 2 (top vertex, labeled 'A')
+      - RightAnglePrism: None (no single apex; two acute vertices)
+      - WedgePrism: vertex 2 (the sharp tip)
+      - RefractometerPrism: None (trapezoid, no apex)
+    """
+    if self._apex_vertex_index is None:
+        return None
+    v = self.path[self._apex_vertex_index]
+    return (v['x'], v['y'])
+```
+
+This property allows callers to query the apex location after construction, regardless of how the prism was created or rotated.
+
 ---
 
-## Phase 1: Foundation
+## Phase 1: Foundation and Core Utilities
 
-**Goal:** Directory structure, `BasePrism` base class, dual-labeling infrastructure.
+**Goal:** Directory structure, `BasePrism` base class, dual-labeling infrastructure, and prism-specific calculation utilities.
 
-Tasks:
+### Tasks: Directory and Base Class
+
 - Create `optical_elements/` directory structure and all `__init__.py` files
 - Implement `BasePrism(Glass)` with:
   - `_compute_path()` abstract method
   - `_edge_roles` / `_vertex_roles` class variables
+  - `_apex_vertex_index` class variable (for `apex_vertex` property)
   - `_apply_functional_labels()` / `_apply_vertex_labels()` methods
   - Functional label query methods (`get_functional_label`, `find_edge_by_functional_label`)
   - Vertex label query methods (`get_vertex_label`, `find_vertex_by_label`)
+  - `apex_vertex` property
   - `label_summary()` method for combined functional + cardinal output
-  - `from_vertices()` escape-hatch constructor
+  - `from_vertices()` escape-hatch constructor (with contract as specified above)
   - `anchor` parameter support (`'centroid'` / `'apex'`)
 
----
+### Tasks: Core Utilities
 
-## Phase 2: Core Utilities
-
-**Goal:** Prism-specific calculation functions, separate from the prism geometry classes.
+Prism-specific calculation functions, separate from the prism geometry classes.
 
 ### `prism_utils.py` — deviation and dispersion
 
@@ -516,6 +577,75 @@ def resolving_power(base_length: float, dn_dlambda: float) -> float:
     where b is the prism base length.
     """
     ...
+
+# --- Wavelength-aware versions (for dispersive simulations) ---
+
+def n_cauchy(wavelength_nm: float, A: float, B: float) -> float:
+    """
+    Refractive index from Cauchy equation: n(λ) = A + B/λ²
+    where λ is in micrometers.
+
+    Args:
+        wavelength_nm: Wavelength in nanometers
+        A: Cauchy coefficient A (dimensionless)
+        B: Cauchy coefficient B (in μm²)
+
+    Returns:
+        Refractive index at the given wavelength
+    """
+    wavelength_um = wavelength_nm / 1000.0
+    return A + B / (wavelength_um ** 2)
+
+def minimum_deviation_wavelength(
+    apex_angle_deg: float,
+    A: float,
+    B: float,
+    wavelength_nm: float
+) -> float:
+    """
+    Minimum deviation angle (degrees) for a prism at a specific wavelength.
+    Uses Cauchy dispersion model for refractive index.
+
+    D_min(λ) = 2 * arcsin(n(λ) * sin(A/2)) - A
+    """
+    n = n_cauchy(wavelength_nm, A, B)
+    return minimum_deviation(apex_angle_deg, n)
+
+def deviation_at_incidence_wavelength(
+    apex_angle_deg: float,
+    A: float,
+    B: float,
+    wavelength_nm: float,
+    theta_i_deg: float
+) -> float:
+    """
+    Total deviation for arbitrary incidence angle at a specific wavelength.
+    Uses Cauchy dispersion model for refractive index.
+    Returns NaN if TIR occurs inside the prism.
+    """
+    n = n_cauchy(wavelength_nm, A, B)
+    return deviation_at_incidence(apex_angle_deg, n, theta_i_deg)
+
+def dispersion_spectrum(
+    apex_angle_deg: float,
+    A: float,
+    B: float,
+    wavelengths_nm: List[float],
+    theta_i_deg: Optional[float] = None
+) -> List[Tuple[float, float]]:
+    """
+    Compute deviation angles across a spectrum of wavelengths.
+
+    Args:
+        apex_angle_deg: Prism apex angle in degrees
+        A, B: Cauchy coefficients
+        wavelengths_nm: List of wavelengths to compute
+        theta_i_deg: Incidence angle. If None, uses minimum deviation for each λ.
+
+    Returns:
+        List of (wavelength_nm, deviation_deg) tuples
+    """
+    ...
 ```
 
 ### `tir_utils.py` — refractometer design utilities
@@ -553,14 +683,63 @@ The existing `fresnel_utils.py` already provides `critical_angle(n1, n2)` and `b
 
 ---
 
-## Phase 3: Prism Implementations (Priority Order)
+## Phase 2: EquilateralPrism
 
-Each implementation consists of:
+**Goal:** First concrete prism implementation. Equilateral is chosen first because its symmetry (all sides equal, all angles 60°) makes geometry validation straightforward.
+
+Each prism implementation consists of:
 1. `_edge_roles` and `_vertex_roles` class variables (functional labels)
-2. `_compute_path()` method (vertex geometry from parameters)
-3. Any type-specific properties or methods
+2. `_apex_vertex_index` class variable
+3. `_compute_path()` method (vertex geometry from parameters)
+4. Any type-specific properties or methods
 
-### Priority 1: `RightAnglePrism`
+### `EquilateralPrism`
+
+```python
+class EquilateralPrism(BasePrism):
+    """60-60-60 equilateral dispersing prism."""
+
+    _edge_roles = [
+        ("B", "Base"),
+        ("X", "Exit Face"),
+        ("E", "Entrance Face"),
+    ]
+    _vertex_roles = [
+        ("BL", "Base Left"),
+        ("BR", "Base Right"),
+        ("A", "Apex"),
+    ]
+    _apex_vertex_index = 2  # V2 is the apex
+
+    def __init__(self, scene: 'Scene', side_length: float, **kwargs: Any) -> None:
+        self.side_length = side_length
+        super().__init__(scene, size=side_length, **kwargs)
+
+    def _compute_path(self) -> List[Dict[str, Union[float, bool]]]:
+        """
+        Vertices (CCW, before rotation/translation):
+          V0 = (0, 0)                      Base Left
+          V1 = (side, 0)                   Base Right
+          V2 = (side/2, side*√3/2)         Apex
+
+        Edge 0 (V0→V1): Base (bottom)
+        Edge 1 (V1→V2): Exit Face (right side)
+        Edge 2 (V2→V0): Entrance Face (left side)
+        """
+        ...
+```
+
+**Key parameters:** `side_length`, `n`, `position`, `rotation`, `anchor`.
+
+**Note on E/X symmetry:** In an equilateral prism, entrance and exit faces are interchangeable. The labels assume canonical orientation (light enters from the left). A `swap_entrance_exit()` method could flip the assignments.
+
+---
+
+## Phase 3: RightAnglePrism
+
+**Goal:** Second prism implementation. The 45-90-45 geometry is fundamental for TIR applications.
+
+### `RightAnglePrism`
 
 ```python
 class RightAnglePrism(BasePrism):
@@ -576,6 +755,7 @@ class RightAnglePrism(BasePrism):
         ("A2", "Acute Vertex 2"),
         ("R", "Right-Angle Vertex"),
     ]
+    _apex_vertex_index = None  # No unique apex (two acute vertices)
 
     def __init__(self, scene: 'Scene', leg_length: float, **kwargs: Any) -> None:
         self.leg_length = leg_length
@@ -599,46 +779,13 @@ class RightAnglePrism(BasePrism):
 
 **Minimum n for TIR:** n ≥ √2 ≈ 1.414 (so that incidence angle of 45° on hypotenuse exceeds the critical angle).
 
-### Priority 2: `EquilateralPrism`
+---
 
-```python
-class EquilateralPrism(BasePrism):
-    """60-60-60 equilateral dispersing prism."""
+## Phase 4: RefractometerPrism
 
-    _edge_roles = [
-        ("B", "Base"),
-        ("X", "Exit Face"),
-        ("E", "Entrance Face"),
-    ]
-    _vertex_roles = [
-        ("BL", "Base Left"),
-        ("BR", "Base Right"),
-        ("A", "Apex"),
-    ]
-```
+**Goal:** Physics-driven prism for refractometer applications. This is the most complex prism with multiple constructors for different use cases.
 
-**Key parameters:** `side_length`, `n`, `position`, `rotation`, `anchor`.
-
-**Note on E/X symmetry:** In an equilateral prism, entrance and exit faces are interchangeable. The labels assume canonical orientation (light enters from the left). A `swap_entrance_exit()` method could flip the assignments.
-
-### Priority 3: `WedgePrism`
-
-```python
-class WedgePrism(BasePrism):
-    """Small-angle wedge prism for beam steering."""
-
-    _edge_roles = [
-        ("B", "Base"),
-        ("X", "Exit Face"),
-        ("E", "Entrance Face"),
-    ]
-```
-
-**Key parameters:** `apex_angle` (small, typically 1°–10°), `size` (base width), `n`, `position`, `rotation`.
-
-This is the first **variable-angle** prism. The constructor takes `apex_angle` explicitly.
-
-### Priority 4: `RefractometerPrism`
+### `RefractometerPrism`
 
 ```python
 class RefractometerPrism(BasePrism):
@@ -653,6 +800,7 @@ class RefractometerPrism(BasePrism):
         ("M", "Measuring Surface"),
         ("E", "Entrance Face"),
     ]
+    _apex_vertex_index = None  # Trapezoid, no apex
 ```
 
 This gives users a physics-driven API: specify what you want to measure, and the prism geometry is computed automatically.
@@ -850,60 +998,24 @@ def validate_geometric_system(self) -> List[str]:
     ...
 ```
 
-### Priority 5: `DovePrism`
+### Deferred Prism Types
 
-```python
-class DovePrism(BasePrism):
-    """Truncated right-angle prism (trapezoidal cross-section)."""
+The following prisms are deferred to future phases:
 
-    _edge_roles = [
-        ("B", "Base (TIR)"),
-        ("X", "Exit Face"),
-        ("T", "Top"),
-        ("E", "Entrance Face"),
-    ]
-```
-
-**Key parameters:** `length`, `height`, `end_angle` (angle of the entrance/exit faces), `n`, `position`, `rotation`.
-
-### Priority 6: `PellinBrocaPrism`
-
-```python
-class PellinBrocaPrism(BasePrism):
-    """4-sided prism with 90-75-135-60 angles. Constant 90° deviation."""
-
-    _edge_roles = [
-        ("E", "Entrance Face"),
-        ("R1", "First Reflecting"),
-        ("X", "Exit Face"),
-        ("R2", "Second Reflecting"),
-    ]
-```
-
-**Key parameters:** `char_length` (characteristic aperture), `n`, `position`, `rotation`.
-
-### Deferred
-
-- **AmiciPrism** — requires 3D roof geometry; 2D approximation is just a `RightAnglePrism`. Defer.
-- **RetroReflector** — inherently 3D (corner cube). In 2D it's two mirrors at 90°, which is a compound scene setup, not a single prism class. Defer / out of scope.
-- **CouplingPrism** — depends on waveguide/thin-film coupling physics not yet in the simulator. Defer.
-- **AnamorphicPrismPair** — compound element (two prisms). Could be a factory function that returns a pair of `WedgePrism` objects. Defer to after single-prism types are stable.
+- **WedgePrism** — Small-angle wedge for beam steering. Variable-angle constructor needed. Defer to Phase 5+.
+- **DovePrism** — Truncated right-angle (trapezoidal). Image rotation at 2× prism rotation. Defer to Phase 5+.
+- **PellinBrocaPrism** — 4-sided (90-75-135-60), constant 90° deviation for wavelength selection. Complex geometry. Defer to Phase 5+.
+- **AmiciPrism** — Requires 3D roof geometry; 2D approximation is just a `RightAnglePrism`. Defer.
+- **RetroReflector** — Inherently 3D (corner cube). In 2D it's two mirrors at 90°, which is a compound scene setup, not a single prism class. Defer / out of scope.
+- **CouplingPrism** — Depends on waveguide/thin-film coupling physics not yet in the simulator. Defer.
+- **AnamorphicPrismPair** — Compound element (two prisms). Could be a factory function that returns a pair of `WedgePrism` objects. Defer to after single-prism types are stable.
 
 ---
 
-## Phase 4: Factory Functions and Convenience API
+## Phase 5: Factory Functions and Convenience API
 
 ```python
 # In optical_elements/prisms/__init__.py
-
-def right_angle_prism(
-    scene: 'Scene',
-    leg_length: float,
-    position: Tuple[float, float] = (0, 0),
-    rotation: float = 0,
-    n: float = 1.5
-) -> RightAnglePrism:
-    ...
 
 def equilateral_prism(
     scene: 'Scene',
@@ -912,45 +1024,29 @@ def equilateral_prism(
     rotation: float = 0,
     n: float = 1.5
 ) -> EquilateralPrism:
+    """Create an equilateral (60-60-60) dispersing prism."""
     ...
 
-def wedge_prism(
+def right_angle_prism(
     scene: 'Scene',
-    apex_angle: float,
-    size: float,
+    leg_length: float,
     position: Tuple[float, float] = (0, 0),
     rotation: float = 0,
     n: float = 1.5
-) -> WedgePrism:
+) -> RightAnglePrism:
+    """Create a 45-90-45 right-angle prism for TIR applications."""
     ...
 
 def refractometer_prism(
     scene: 'Scene',
     n_prism: float,
     n_sample_range: Tuple[float, float],
-    size: float,
+    measuring_surface_length: float,
+    system_type: str = 'angular',
     position: Tuple[float, float] = (0, 0),
     rotation: float = 0
 ) -> RefractometerPrism:
-    ...
-
-def dove_prism(
-    scene: 'Scene',
-    length: float,
-    height: float,
-    position: Tuple[float, float] = (0, 0),
-    rotation: float = 0,
-    n: float = 1.5
-) -> DovePrism:
-    ...
-
-def pellin_broca_prism(
-    scene: 'Scene',
-    char_length: float,
-    position: Tuple[float, float] = (0, 0),
-    rotation: float = 0,
-    n: float = 1.5
-) -> PellinBrocaPrism:
+    """Create a refractometer prism from physics parameters."""
     ...
 ```
 
@@ -969,7 +1065,7 @@ def describe_prism(prism: 'BasePrism', format: str = 'text') -> str:
 
 ---
 
-## Phase 5: Testing
+## Phase 6: Testing
 
 ### Geometry verification
 - For each prism type: verify vertex positions, internal angles, edge lengths, and polygon area against analytical formulas.
@@ -992,10 +1088,13 @@ def describe_prism(prism: 'BasePrism', format: str = 'text') -> str:
 - `refractive_index_from_deviation()`: round-trip test with `minimum_deviation()`
 - `deviation_at_incidence()`: verify symmetry at minimum deviation, verify TIR detection
 - `critical_angle()` and `prism_angle_for_refractometer()`: verify against hand calculations
+- `n_cauchy()`: verify against known glass data (e.g., BK7 glass)
+- `minimum_deviation_wavelength()`: verify dispersion curve shape (red deviates less than blue)
+- `dispersion_spectrum()`: verify output covers full wavelength range
 
 ---
 
-## Phase 6: Examples
+## Phase 7: Examples
 
 ### Example 1: Classic dispersion (equilateral prism + white light)
 White beam → equilateral prism → rainbow fan of exit rays. Demonstrates Cauchy dispersion and functional labels.
@@ -1020,3 +1119,37 @@ Create a prism, rotate it to several orientations. Print `label_summary()` at ea
 - **3D prism types:** Amici roof, corner cube, pentaprism with coated faces — require a 3D extension or explicit documentation of 2D limitations.
 - **Compound elements:** Anamorphic prism pairs, Wollaston/Rochon polarizers (require birefringence support), Amici direct-vision prisms (cemented multi-element). These depend on features not yet in the simulator (birefringence, cemented interfaces).
 - **Material database integration:** Connecting to refractiveindex.info or Schott glass catalog for real material data (e.g., via PyOptik library).
+
+some interesting prism types to consider in the future:
+
+### Abbe prism (3 Edges)
+https://www.scientificlib.com/en/Physics/Optics/AbbePrism.html
+In optics, an Abbe prism, named for its inventor, the German physicist Ernst Abbe, is a type of constant deviation dispersive prism similar to a Pellin-Broca prism.
+
+Structure
+
+The prism consist of a block of glass forming a right prism with 30°-60°-90° triangular faces. When in use, a beam of light enters face AB, is refracted and undergoes total internal reflection from face BC, and is refracted again on exiting face AC. The prism is designed such that one particular wavelength of the light exits the prism at a deviation angle (relative to the light's original path) of exactly 60°. This is the minimum possible deviation of the prism, all other wavelengths being deviated by greater angles. By rotating the prism (in the plane of the diagram) around any point O on the face AB, the wavelength which is deviated by 60° can be selected.
+
+
+The dispersive Abbe prism should not be confused with the non-dispersive Porro-Abbe or Abbe-Koenig prisms
+
+### PellinBrocaPrism (4 edges)
+https://www.scientificlib.com/en/Physics/Optics/PellinBrocaPrism.html
+
+| Edge | Short | Long                 | Notes                          |
+|------|-------|----------------------|--------------------------------|
+| 0    | `E`   | Entrance Face        | 90° angle corner               |
+| 1    | `R1`  | First Reflecting     | Internal reflecting surface    |
+| 2    | `X`   | Exit Face            | 90° deviation output           |
+| 3    | `R2`  | Second Reflecting    | Internal reflecting surface    |
+A Pellin-Broca prism is a type of constant deviation dispersive prism similar to an Abbe prism.
+
+
+The prism is named for its inventors, the French instrument maker Ph. Pellin and professor of physiological optics André Broca.
+
+
+The prism consist of a four-sided block of glass shaped as a right prism with 90°, 75°, 135°, and 60° angles on the end faces. Light enters the prism through face AB, undergoes total internal reflection from face BC, and exits through face AD. The refraction of the light as it enters and exits the prism is such that one particular wavelength of the light is deviated by exactly 90°. As the prism is rotated around a point O, one-third of the distance along face BC, the selected wavelength which is deviated by 90° is changed without changing the geometry or relative positions of the input and output beams.
+
+
+The prism is commonly used to separate a single required wavelength from a light beam containing multiple wavelengths, such as a particular output line from a multi-line laser due to its ability to separate beams even after they have undergone a non-linear frequency conversion. For this reason, the are also commonly used in optical atomic spectroscopy.
+
