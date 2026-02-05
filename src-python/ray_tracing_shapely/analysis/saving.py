@@ -196,6 +196,10 @@ def rays_to_xml(
         length = math.sqrt(dx * dx + dy * dy)
 
         lines.append(f'  <ray index="{i}">')
+        
+        ray_uuid = getattr(ray, 'uuid', None)
+        if ray_uuid:
+            lines.append(f'    <uuid>{_escape_xml(ray_uuid)}</uuid>')
 
         # Geometry
         lines.append(f'    <p1 x="{coord_fmt.format(p1_x)}" y="{coord_fmt.format(p1_y)}"/>')
