@@ -370,6 +370,371 @@ def _describe_edges_xml(glass: 'BaseGlass', edges: List[EdgeDescription]) -> str
     return "\n".join(lines)
 
 
+# =============================================================================
+# PYTHON-SPECIFIC FEATURE: Prism Description
+# =============================================================================
+# Provides a structured description of prism objects for LLM agents,
+# combining functional labels, cardinal labels, geometry, and physics.
+# =============================================================================
+
+def describe_prism(prism: 'BaseGlass', format: str = 'text') -> str:
+    """
+    Generate a structured description of a prism for LLM agents.
+
+    Combines functional labels (optical purpose), cardinal labels (spatial
+    direction), geometry (vertices, edges, angles), and physics parameters
+    (refractive index, apex angle, etc.) into a comprehensive description.
+
+    This function is specifically designed for prism objects from the
+    optical_elements.prisms module, but can also be used with any BaseGlass
+    object (falling back to describe_edges for non-prism objects).
+
+    Args:
+        prism: A BasePrism object (or any BaseGlass with a path).
+        format: Output format - 'text' for human-readable, 'xml' for structured.
+            Defaults to 'text'.
+
+    Returns:
+        Formatted string describing the prism.
+
+    Example (text format):
+        >>> from ray_tracing_shapely.analysis import describe_prism
+        >>> print(describe_prism(equilateral_prism))
+
+        EquilateralPrism Description
+        ==============================================================================
+        Type: EquilateralPrism
+        Refractive Index: 1.500
+        Position: (100.0, 100.0)
+        Rotation: 0.0 degrees
+
+        Geometry:
+          Side Length: 50.00
+          Apex Angle: 60.0 degrees
+          Signed Area: 1082.53 (CCW vertex ordering)
+
+        Edges:
+          Edge 0: Base (B) | facing South (S) | length: 50.00
+          Edge 1: Exit Face (X) | facing North East (NE) | length: 50.00
+          Edge 2: Entrance Face (E) | facing North West (NW) | length: 50.00
+
+        Vertices:
+          Vertex 0: Base Left (BL) at (75.00, 85.57)
+          Vertex 1: Base Right (BR) at (125.00, 85.57)
+          Vertex 2: Apex (A) at (100.00, 128.87)
+
+        Physics:
+          Minimum Deviation: 37.18 degrees
+          Incidence for Min Dev: 48.59 degrees
+        ==============================================================================
+    """
+    # Check if this is a prism with functional labels
+    has_functional_labels = hasattr(prism, '_functional_labels') and prism._functional_labels
+    has_vertex_labels = hasattr(prism, '_vertex_labels') and prism._vertex_labels
+
+    if not has_functional_labels:
+        # Fall back to standard describe_edges for non-prism objects
+        return describe_edges(prism, format=format)
+
+    if format == 'xml':
+        return _describe_prism_xml(prism)
+    else:
+        return _describe_prism_text(prism)
+
+
+def _describe_prism_text(prism: 'BaseGlass') -> str:
+    """Generate human-readable text format for prism description."""
+    lines = []
+
+    # Get prism type and basic info
+    prism_type = getattr(prism, 'type', prism.__class__.__name__)
+    ref_index = getattr(prism, 'refIndex', None)
+    position = getattr(prism, '_position', (0.0, 0.0))
+    rotation = getattr(prism, '_rotation', 0.0)
+
+    # Header
+    lines.append(f"\n{prism_type} Description")
+    lines.append("=" * 78)
+
+    # Basic info
+    lines.append(f"Type: {prism_type}")
+    if ref_index is not None:
+        lines.append(f"Refractive Index: {ref_index:.3f}")
+    lines.append(f"Position: ({position[0]:.1f}, {position[1]:.1f})")
+    lines.append(f"Rotation: {rotation:.1f} degrees")
+
+    # Geometry section
+    lines.append("\nGeometry:")
+
+    # Type-specific geometry parameters
+    if hasattr(prism, 'side_length'):
+        lines.append(f"  Side Length: {prism.side_length:.2f}")
+    if hasattr(prism, 'leg_length'):
+        lines.append(f"  Leg Length: {prism.leg_length:.2f}")
+    if hasattr(prism, 'measuring_surface_length'):
+        lines.append(f"  Measuring Surface Length: {prism.measuring_surface_length:.2f}")
+    if hasattr(prism, 'face_angle'):
+        lines.append(f"  Face Angle: {prism.face_angle:.2f} degrees")
+    if hasattr(prism, 'apex_angle'):
+        lines.append(f"  Apex Angle: {prism.apex_angle:.1f} degrees")
+
+    # Signed area (CCW verification)
+    if hasattr(prism, 'signed_area'):
+        area = prism.signed_area()
+        ordering = "CCW vertex ordering" if area > 0 else "CW vertex ordering"
+        lines.append(f"  Signed Area: {abs(area):.2f} ({ordering})")
+
+    # Apex vertex if defined
+    apex = getattr(prism, 'apex_vertex', None)
+    if apex is not None:
+        lines.append(f"  Apex Vertex: ({apex[0]:.2f}, {apex[1]:.2f})")
+
+    # Edges section - combine functional and cardinal labels
+    lines.append("\nEdges:")
+    if hasattr(prism, '_functional_labels') and prism.path:
+        n_edges = len(prism.path)
+        for i in range(n_edges):
+            func_label = prism._functional_labels.get(i, (str(i), f"Edge {i}"))
+            card_label = prism.get_edge_label(i) if hasattr(prism, 'get_edge_label') else None
+
+            func_short, func_long = func_label
+            card_short = card_label[0] if card_label else "?"
+            card_long = card_label[1] if card_label else "?"
+
+            # Get edge length
+            length = prism.get_edge_length(i) if hasattr(prism, 'get_edge_length') else 0.0
+
+            lines.append(
+                f"  Edge {i}: {func_long} ({func_short}) | facing {card_long} ({card_short}) | length: {length:.2f}"
+            )
+
+    # Vertices section
+    lines.append("\nVertices:")
+    if hasattr(prism, '_vertex_labels') and prism.path:
+        for i, v in enumerate(prism.path):
+            v_label = prism._vertex_labels.get(i, (str(i), f"Vertex {i}"))
+            v_short, v_long = v_label
+
+            # Get interior angle
+            angle = prism.get_interior_angle(i) if hasattr(prism, 'get_interior_angle') else 0.0
+
+            lines.append(
+                f"  Vertex {i}: {v_long} ({v_short}) at ({v['x']:.2f}, {v['y']:.2f}) | angle: {angle:.1f} deg"
+            )
+
+    # Physics section (prism-specific)
+    physics_lines = []
+
+    # EquilateralPrism physics
+    if hasattr(prism, 'minimum_deviation'):
+        try:
+            min_dev = prism.minimum_deviation()
+            physics_lines.append(f"  Minimum Deviation: {min_dev:.2f} degrees")
+        except Exception:
+            pass
+    if hasattr(prism, 'incidence_for_minimum_deviation'):
+        try:
+            inc = prism.incidence_for_minimum_deviation()
+            physics_lines.append(f"  Incidence for Min Dev: {inc:.2f} degrees")
+        except Exception:
+            pass
+
+    # RightAnglePrism physics
+    if hasattr(prism, 'supports_tir'):
+        physics_lines.append(f"  Supports TIR: {prism.supports_tir}")
+    if hasattr(prism, 'tir_margin'):
+        try:
+            margin = prism.tir_margin()
+            physics_lines.append(f"  TIR Margin: {margin:.2f} degrees")
+        except Exception:
+            pass
+    if hasattr(prism, 'hypotenuse_length'):
+        physics_lines.append(f"  Hypotenuse Length: {prism.hypotenuse_length:.2f}")
+
+    # RefractometerPrism physics
+    if hasattr(prism, 'n_prism'):
+        physics_lines.append(f"  Prism Index (n_prism): {prism.n_prism:.3f}")
+    if hasattr(prism, 'n_sample_range'):
+        n_min, n_max = prism.n_sample_range
+        physics_lines.append(f"  Sample Range: [{n_min:.3f}, {n_max:.3f}]")
+    if hasattr(prism, 'theta_c_range'):
+        tc_min, tc_max = prism.theta_c_range
+        physics_lines.append(f"  Critical Angle Range: [{tc_min:.2f}, {tc_max:.2f}] degrees")
+    if hasattr(prism, 'system_type'):
+        physics_lines.append(f"  System Type: {prism.system_type}")
+    if hasattr(prism, 'n_mid'):
+        physics_lines.append(f"  Mid-Range Index (n_mid): {prism.n_mid:.3f}")
+    if hasattr(prism, 'theta_c_mid'):
+        physics_lines.append(f"  Mid-Range Critical Angle: {prism.theta_c_mid:.2f} degrees")
+
+    if physics_lines:
+        lines.append("\nPhysics:")
+        lines.extend(physics_lines)
+
+    lines.append("=" * 78)
+
+    return "\n".join(lines)
+
+
+def _describe_prism_xml(prism: 'BaseGlass') -> str:
+    """Generate XML format for prism description."""
+    lines = []
+
+    # Get prism type and basic info
+    prism_type = getattr(prism, 'type', prism.__class__.__name__)
+    ref_index = getattr(prism, 'refIndex', None)
+    position = getattr(prism, '_position', (0.0, 0.0))
+    rotation = getattr(prism, '_rotation', 0.0)
+
+    # XML header
+    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+    lines.append('<prism_description>')
+
+    # Basic info section
+    lines.append('  <prism_info>')
+    lines.append(f'    <type>{_escape_xml(prism_type)}</type>')
+    if ref_index is not None:
+        lines.append(f'    <refractive_index>{ref_index:.4f}</refractive_index>')
+    lines.append(f'    <position x="{position[0]:.4f}" y="{position[1]:.4f}"/>')
+    lines.append(f'    <rotation degrees="{rotation:.2f}"/>')
+
+    # UUID and name if available
+    obj_uuid = getattr(prism, 'uuid', None)
+    obj_name = getattr(prism, 'name', None)
+    if obj_uuid:
+        lines.append(f'    <uuid>{_escape_xml(obj_uuid)}</uuid>')
+    if obj_name:
+        lines.append(f'    <name>{_escape_xml(obj_name)}</name>')
+
+    lines.append('  </prism_info>')
+
+    # Geometry section
+    lines.append('  <geometry>')
+
+    # Type-specific geometry parameters
+    if hasattr(prism, 'side_length'):
+        lines.append(f'    <side_length>{prism.side_length:.4f}</side_length>')
+    if hasattr(prism, 'leg_length'):
+        lines.append(f'    <leg_length>{prism.leg_length:.4f}</leg_length>')
+    if hasattr(prism, 'measuring_surface_length'):
+        lines.append(f'    <measuring_surface_length>{prism.measuring_surface_length:.4f}</measuring_surface_length>')
+    if hasattr(prism, 'face_angle'):
+        lines.append(f'    <face_angle degrees="{prism.face_angle:.4f}"/>')
+    if hasattr(prism, 'apex_angle'):
+        lines.append(f'    <apex_angle degrees="{prism.apex_angle:.4f}"/>')
+
+    # Signed area
+    if hasattr(prism, 'signed_area'):
+        area = prism.signed_area()
+        ordering = "ccw" if area > 0 else "cw"
+        lines.append(f'    <signed_area value="{abs(area):.4f}" ordering="{ordering}"/>')
+
+    # Apex vertex
+    apex = getattr(prism, 'apex_vertex', None)
+    if apex is not None:
+        lines.append(f'    <apex_vertex x="{apex[0]:.4f}" y="{apex[1]:.4f}"/>')
+
+    lines.append('  </geometry>')
+
+    # Edges section
+    lines.append('  <edges>')
+    if hasattr(prism, '_functional_labels') and prism.path:
+        n_edges = len(prism.path)
+        for i in range(n_edges):
+            func_label = prism._functional_labels.get(i, (str(i), f"Edge {i}"))
+            card_label = prism.get_edge_label(i) if hasattr(prism, 'get_edge_label') else None
+
+            func_short, func_long = func_label
+            card_short = card_label[0] if card_label else "?"
+            card_long = card_label[1] if card_label else "?"
+
+            # Get edge endpoints and length
+            endpoints = prism.get_edge_endpoints(i) if hasattr(prism, 'get_edge_endpoints') else None
+            length = prism.get_edge_length(i) if hasattr(prism, 'get_edge_length') else 0.0
+
+            lines.append(f'    <edge index="{i}" functional_short="{_escape_xml(func_short)}" '
+                        f'functional_long="{_escape_xml(func_long)}" '
+                        f'cardinal_short="{_escape_xml(card_short)}" '
+                        f'cardinal_long="{_escape_xml(card_long)}">')
+            lines.append(f'      <length>{length:.4f}</length>')
+            if endpoints:
+                (x1, y1), (x2, y2) = endpoints
+                lines.append(f'      <p1 x="{x1:.4f}" y="{y1:.4f}"/>')
+                lines.append(f'      <p2 x="{x2:.4f}" y="{y2:.4f}"/>')
+            lines.append('    </edge>')
+
+    lines.append('  </edges>')
+
+    # Vertices section
+    lines.append('  <vertices>')
+    if hasattr(prism, '_vertex_labels') and prism.path:
+        for i, v in enumerate(prism.path):
+            v_label = prism._vertex_labels.get(i, (str(i), f"Vertex {i}"))
+            v_short, v_long = v_label
+            angle = prism.get_interior_angle(i) if hasattr(prism, 'get_interior_angle') else 0.0
+
+            lines.append(f'    <vertex index="{i}" short="{_escape_xml(v_short)}" '
+                        f'long="{_escape_xml(v_long)}" '
+                        f'x="{v["x"]:.4f}" y="{v["y"]:.4f}" '
+                        f'interior_angle="{angle:.2f}"/>')
+
+    lines.append('  </vertices>')
+
+    # Physics section
+    physics_items = []
+
+    # EquilateralPrism physics
+    if hasattr(prism, 'minimum_deviation'):
+        try:
+            min_dev = prism.minimum_deviation()
+            physics_items.append(f'    <minimum_deviation degrees="{min_dev:.4f}"/>')
+        except Exception:
+            pass
+    if hasattr(prism, 'incidence_for_minimum_deviation'):
+        try:
+            inc = prism.incidence_for_minimum_deviation()
+            physics_items.append(f'    <incidence_for_min_deviation degrees="{inc:.4f}"/>')
+        except Exception:
+            pass
+
+    # RightAnglePrism physics
+    if hasattr(prism, 'supports_tir'):
+        physics_items.append(f'    <supports_tir>{str(prism.supports_tir).lower()}</supports_tir>')
+    if hasattr(prism, 'tir_margin'):
+        try:
+            margin = prism.tir_margin()
+            physics_items.append(f'    <tir_margin degrees="{margin:.4f}"/>')
+        except Exception:
+            pass
+    if hasattr(prism, 'hypotenuse_length'):
+        physics_items.append(f'    <hypotenuse_length>{prism.hypotenuse_length:.4f}</hypotenuse_length>')
+
+    # RefractometerPrism physics
+    if hasattr(prism, 'n_prism'):
+        physics_items.append(f'    <n_prism>{prism.n_prism:.4f}</n_prism>')
+    if hasattr(prism, 'n_sample_range'):
+        n_min, n_max = prism.n_sample_range
+        physics_items.append(f'    <n_sample_range n_min="{n_min:.4f}" n_max="{n_max:.4f}"/>')
+    if hasattr(prism, 'theta_c_range'):
+        tc_min, tc_max = prism.theta_c_range
+        physics_items.append(f'    <theta_c_range min_deg="{tc_min:.4f}" max_deg="{tc_max:.4f}"/>')
+    if hasattr(prism, 'system_type'):
+        physics_items.append(f'    <system_type>{_escape_xml(prism.system_type)}</system_type>')
+    if hasattr(prism, 'n_mid'):
+        physics_items.append(f'    <n_mid>{prism.n_mid:.4f}</n_mid>')
+    if hasattr(prism, 'theta_c_mid'):
+        physics_items.append(f'    <theta_c_mid degrees="{prism.theta_c_mid:.4f}"/>')
+
+    if physics_items:
+        lines.append('  <physics>')
+        lines.extend(physics_items)
+        lines.append('  </physics>')
+
+    lines.append('</prism_description>')
+
+    return "\n".join(lines)
+
+
 def glass_to_polygon(glass: 'BaseGlass') -> Polygon:
     """
     Convert a Glass object's path to a Shapely Polygon.

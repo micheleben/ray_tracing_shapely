@@ -1153,3 +1153,149 @@ The prism consist of a four-sided block of glass shaped as a right prism with 90
 
 The prism is commonly used to separate a single required wavelength from a light beam containing multiple wavelengths, such as a particular output line from a multi-line laser due to its ability to separate beams even after they have undergone a non-linear frequency conversion. For this reason, the are also commonly used in optical atomic spectroscopy.
 
+---
+
+## Implementation Notes
+
+### Implementation Status (2026-02-05)
+
+Phases 1-4 have been implemented. The following files were created:
+
+**Directory Structure:**
+```
+src-python/ray_tracing_shapely/optical_elements/
+├── __init__.py                    # Top-level exports
+└── prisms/
+    ├── __init__.py                # Factory functions and re-exports
+    ├── base_prism.py              # BasePrism base class
+    ├── prism_utils.py             # Deviation/dispersion utilities
+    ├── tir_utils.py               # Refractometer design utilities
+    ├── equilateral.py             # EquilateralPrism class
+    ├── right_angle.py             # RightAnglePrism class
+    └── refractometer.py           # RefractometerPrism class
+```
+
+### Verification Results
+
+All prism classes have been tested and verified:
+
+```python
+# EquilateralPrism (60-60-60)
+- Signed area: positive (CCW vertex order confirmed)
+- Apex vertex correctly identified at V2
+- minimum_deviation(60, 1.5) = 37.18 deg (matches analytical)
+
+# RightAnglePrism (45-90-45)
+- Signed area: positive (CCW vertex order confirmed)
+- TIR support: True for n >= sqrt(2) ~ 1.414
+- TIR margin for n=1.5: 3.19 deg above threshold
+- Label summary shows correct functional + cardinal labels
+
+# RefractometerPrism (symmetric trapezoid)
+- Face angle computed correctly from n_sample_range
+- Exit angle = 0 at n_mid (normal exit design verified)
+- Three constructors implemented: __init__, from_apex_angle, from_geometric_constraints
+```
+
+### Key Design Decisions Made During Implementation
+
+1. **Inheritance**: `BasePrism` extends `Glass` (which extends `BaseGlass`), inheriting all existing refraction and rendering capabilities.
+
+2. **Vertex ordering**: All prisms use counterclockwise (CCW) vertex ordering, verified by positive signed area calculation.
+
+3. **Rotation/translation**: The `_apply_rotation_and_translation()` helper method in `BasePrism` handles positioning for all subclasses.
+
+4. **Functional vs Cardinal labels**: Functional labels are stored in `_functional_labels` (separate from `edge_labels` in BaseGlass which holds cardinal labels).
+
+5. **from_vertices() contract**: Creates a prism with numeric functional labels (not type-specific), as documented in the roadmap.
+
+6. **RefractometerPrism height**: Default trapezoid height is set to half the measuring surface length. This provides reasonable proportions for visualization.
+
+7. **RightAnglePrism vertex geometry note**: The actual geometry places the 90-degree angle at V0 (origin), where the horizontal base meets the vertical exit face. V1 and V2 have 45-degree angles. The current vertex labels (A1, A2, R) may need review to match the geometric reality. The tests verify actual geometry angles: [90°, 45°, 45°] at vertices [V0, V1, V2].
+
+### Phase 5-6 Implementation (2026-02-05)
+
+**Phase 5: describe_prism() function**
+
+Added `describe_prism()` function to `analysis/glass_geometry.py`:
+- Generates comprehensive prism descriptions for LLM agents
+- Supports 'text' and 'xml' output formats
+- Combines functional labels, cardinal labels, geometry, and physics parameters
+- Automatically detects prism type and includes type-specific information:
+  - EquilateralPrism: minimum deviation, incidence for min dev
+  - RightAnglePrism: TIR support, TIR margin, hypotenuse length
+  - RefractometerPrism: n_sample_range, critical angle range, system type
+- Exported from `ray_tracing_shapely.analysis`
+
+**Phase 6: Testing**
+
+Created comprehensive test file at `developer_tests/test_prisms.py`:
+
+1. **Geometry Verification Tests (3 tests)**
+   - EquilateralPrism: all sides equal, all angles 60°, CCW ordering
+   - RightAnglePrism: leg lengths, hypotenuse = leg×√2, angles 90-45-45
+   - RefractometerPrism: 4 vertices, measuring surface length, face angle
+
+2. **Label Correctness Tests (4 tests)**
+   - Functional labels for each prism type (B/X/E, E/H/X, B/X/M/E)
+   - Vertex labels for each prism type
+   - find_edge_by_functional_label() correctness
+   - Labels after rotation: functional unchanged, cardinal updated
+
+3. **Utility Function Tests (8 tests)**
+   - minimum_deviation(): analytical formula verification
+   - refractive_index_from_deviation(): round-trip test
+   - deviation_at_incidence(): symmetry at minimum deviation
+   - critical_angle(): formula and error handling
+   - n_cauchy(): dispersion model (blue > green > red)
+   - dispersion_spectrum(): wavelength range coverage
+   - RightAnglePrism TIR: supports_tir, tir_margin, critical_angle_at_hypotenuse
+   - RefractometerPrism physics: exit_angle_for(n_mid) = 0
+
+4. **Integration Tests (3 tests)**
+   - describe_prism(): text and XML output for all prism types
+   - from_vertices(): escape hatch with numeric labels
+   - Factory functions: equilateral_prism, right_angle_prism, refractometer_prism
+
+All 18 tests pass. Run with:
+```bash
+python -m ray_tracing_shapely.developer_tests.test_prisms
+```
+
+### Remaining Work (Phase 7)
+
+- **Phase 7**: Example scripts demonstrating each prism type.
+
+### Usage Example
+
+```python
+from ray_tracing_shapely.core.scene import Scene
+from ray_tracing_shapely.optical_elements.prisms import (
+    EquilateralPrism, RightAnglePrism, RefractometerPrism,
+    prism_utils
+)
+
+# Create scene
+scene = Scene()
+
+# Equilateral prism for dispersion
+eq_prism = EquilateralPrism(scene, side_length=50.0, n=1.5, position=(100, 100))
+print(f"Min deviation: {eq_prism.minimum_deviation():.2f} deg")
+print(eq_prism.label_summary())
+
+# Right-angle prism for TIR
+ra_prism = RightAnglePrism(scene, leg_length=30.0, n=1.5, position=(200, 100))
+print(f"Supports TIR: {ra_prism.supports_tir}")
+
+# Refractometer prism from physics
+ref_prism = RefractometerPrism(
+    scene,
+    n_prism=1.72,
+    n_sample_range=(1.30, 1.50),
+    measuring_surface_length=20.0,
+    position=(300, 100)
+)
+print(f"Face angle: {ref_prism.face_angle:.2f} deg")
+print(f"Exit angle at n=1.40: {ref_prism.exit_angle_for(1.40):.2f} deg")
+```
+

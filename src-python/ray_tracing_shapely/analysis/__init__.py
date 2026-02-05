@@ -42,6 +42,8 @@ from .glass_geometry import (
     EdgeDescription,
     get_edge_descriptions,
     describe_edges,
+    # Prism description (Python-specific)
+    describe_prism,
 )
 from .saving import (
     save_rays_csv,
@@ -102,6 +104,8 @@ __all__ = [
     'EdgeDescription',
     'get_edge_descriptions',
     'describe_edges',
+    # Prism description (Python-specific)
+    'describe_prism',
     # Ray data export and statistics
     'save_rays_csv',
     'rays_to_xml',
