@@ -619,7 +619,7 @@ class BaseGlass(BaseSceneObj):
 
             # Criterion 1: Angle threshold
             # Convert cos1 to angle in degrees (cos1 is cosine of incidence angle)
-            incidence_angle_deg = math.degrees(math.acos(abs(cos1)))
+            incidence_angle_deg = math.degrees(math.acos(min(1.0, abs(cos1))))
             if incidence_angle_deg >= self.scene.grazing_angle_threshold:
                 grazing_angle = True
 
@@ -711,7 +711,7 @@ class BaseGlass(BaseSceneObj):
             # Handle negative refractive index
             if mod_neg:
                 n1 = -n1  # Restore n1
-                cos2 = math.cos(2 * math.pi - math.acos(cos2))
+                cos2 = math.cos(2 * math.pi - math.acos(max(-1.0, min(1.0, cos2))))
 
             # Create refracted ray
             # Calculate refracted direction
