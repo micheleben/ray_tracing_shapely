@@ -69,6 +69,7 @@ from .ray_geometry_queries import (
     find_rays_by_polarization,
     # Phase 2: Geometry convenience utilities
     interpolate_along_edge,
+    normal_along_edge,
     describe_all_glass_edges,
 )
 from .fresnel_utils import (
@@ -126,6 +127,7 @@ __all__ = [
     'find_rays_by_angle_to_edge',
     'find_rays_by_polarization',
     'interpolate_along_edge',
+    'normal_along_edge',
     'describe_all_glass_edges',
     # Fresnel equation utilities (Python-specific)
     'fresnel_transmittances',

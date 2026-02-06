@@ -445,6 +445,63 @@ def interpolate_along_edge(
     return (point.x, point.y)
 
 
+def normal_along_edge(
+    glass_obj: 'BaseGlass',
+    edge_label: str,
+    fraction: float = 0.5,
+    length: float = 1.0,
+    as_point: bool = False,
+) -> Tuple[
+    Union[Tuple[float, float], Point],
+    Union[Tuple[float, float], Point],
+]:
+    """
+    Get two points defining the outward normal to a glass edge.
+
+    The first point (base) sits on the edge at the given *fraction*.
+    The second point (tip) is offset from the base along the outward-pointing
+    unit normal by *length* scene units.
+
+    Args:
+        glass_obj: A BaseGlass object with labeled edges.
+        edge_label: Label of the edge (short_label, long_label, or index
+            string).
+        fraction: Position along the edge where the normal originates,
+            0.0 = start (p1), 1.0 = end (p2). Default: 0.5 (midpoint).
+        length: Length of the normal segment in scene units. Default: 1.0.
+        as_point: If True, return ``shapely.geometry.Point`` objects instead
+            of (x, y) tuples. Default: False.
+
+    Returns:
+        (base, tip) — two points defining the normal direction.
+        *base* lies on the edge, *tip* is *length* units outward.
+
+    Raises:
+        ValueError: If ``edge_label`` doesn't match any edge.
+
+    Example:
+        >>> base, tip = normal_along_edge(prism, 'S', 0.5, length=10.0)
+        >>> base_pt, tip_pt = normal_along_edge(prism, 'S', 0.5, as_point=True)
+    """
+    edge = _resolve_edge(glass_obj, edge_label)
+
+    # Base point on the edge
+    edge_line = _edge_to_linestring(edge)
+    base_shapely = edge_line.interpolate(fraction, normalized=True)
+    bx, by = base_shapely.x, base_shapely.y
+
+    # Outward unit normal
+    nx, ny = _edge_outward_normal(edge, glass_obj)
+
+    # Tip point
+    tx = bx + nx * length
+    ty = by + ny * length
+
+    if as_point:
+        return (Point(bx, by), Point(tx, ty))
+    return ((bx, by), (tx, ty))
+
+
 def describe_all_glass_edges(
     scene: 'Scene',
     format: str = 'text'

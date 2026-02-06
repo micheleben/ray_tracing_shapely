@@ -334,6 +334,21 @@ class Scene:
     # Convenience method to auto-label all glass objects in the scene.
     # =========================================================================
 
+    def get_object_by_name(self, name: str) -> Optional[object]:
+        """
+        Return the first object whose name matches the given string, or None.
+
+        Args:
+            name: The name to search for (exact match, case-sensitive).
+
+        Returns:
+            The matching object, or None if no object has that name.
+        """
+        for obj in self.objs:
+            if hasattr(obj, 'name') and obj.name == name:
+                return obj
+        return None
+
     def auto_label_all_glass_cardinal(self):
         """
         Automatically label all glass objects with cardinal directions.
