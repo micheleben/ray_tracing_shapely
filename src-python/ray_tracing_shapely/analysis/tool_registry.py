@@ -331,6 +331,28 @@ _REGISTRY: List[Dict[str, str]] = [
         'signature': '() -> Dict[str, Any]',
         'description': 'Return schema of all tables in the simulation database',
     },
+    # Phase 2: Lineage + Fresnel agentic wrappers
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'rank_paths_by_energy',
+        'kind': 'function',
+        'signature': '(top_n=10) -> Dict[str, Any]',
+        'description': 'Rank optical paths by terminal brightness (requires lineage)',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'check_energy_conservation',
+        'kind': 'function',
+        'signature': '() -> Dict[str, Any]',
+        'description': 'Verify energy conservation at each branching point (requires lineage)',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'fresnel_transmittances_tool',
+        'kind': 'function',
+        'signature': '(n1, n2, theta_i_deg) -> Dict[str, Any]',
+        'description': 'Compute Fresnel transmittances/reflectances at an interface',
+    },
     # Legacy XML tools (superseded by query_rays, kept for backward compat)
     {
         'module': 'analysis.agentic_tools',
@@ -463,12 +485,13 @@ def list_available_tools(format: str = 'text') -> Union[str, Dict[str, List[Dict
 
 def get_agentic_tools() -> List[Dict[str, Any]]:
     """
-    Return the string-based agentic tool wrappers with metadata.
+    Return the agentic tool wrappers with metadata and JSON Schema definitions.
 
     Each entry contains:
     - 'name': function name (str)
     - 'function': the callable
     - 'description': one-line description (str)
+    - 'input_schema': JSON Schema dict describing the function parameters
 
     These are framework-agnostic.  To use with a specific framework::
 
@@ -481,12 +504,22 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         from langchain.tools import StructuredTool
         tools = [StructuredTool.from_function(t['function']) for t in get_agentic_tools()]
 
+        # Claude API (raw tool definitions)
+        tools = [{
+            'name': t['name'],
+            'description': t['description'],
+            'input_schema': t['input_schema'],
+        } for t in get_agentic_tools()]
+
     Returns:
-        List of dicts with tool metadata and callables.
+        List of dicts with tool metadata, callables, and JSON Schema definitions.
     """
     from .agentic_tools import (
         query_rays,
         describe_schema,
+        rank_paths_by_energy,
+        check_energy_conservation,
+        fresnel_transmittances_tool,
         find_rays_inside_glass_xml,
         find_rays_crossing_edge_xml,
         find_rays_by_angle_to_edge_xml,
@@ -498,6 +531,25 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         highlight_custom_rays_svg,
     )
 
+    # Shared schema fragments for SVG tools
+    _SVG_COMMON_PROPS = {
+        'width': {
+            'type': 'integer',
+            'description': 'SVG width in pixels.',
+            'default': 800,
+        },
+        'height': {
+            'type': 'integer',
+            'description': 'SVG height in pixels.',
+            'default': 600,
+        },
+        'viewbox': {
+            'type': 'string',
+            'description': 'Viewbox as "min_x,min_y,width,height" or "auto".',
+            'default': 'auto',
+        },
+    }
+
     return [
         # --- Phase 1: SQL query tools ---
         {
@@ -507,58 +559,272 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
                            'Tables: rays, glass_objects, edges, ray_glass_membership, '
                            'ray_edge_crossing. Only SELECT is allowed. '
                            'Use describe_schema() to see column definitions.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'sql': {
+                        'type': 'string',
+                        'description': 'A SELECT query against tables: rays, glass_objects, '
+                                       'edges, ray_glass_membership, ray_edge_crossing.',
+                    },
+                },
+                'required': ['sql'],
+            },
         },
         {
             'name': 'describe_schema',
             'function': describe_schema,
             'description': 'Return schema of all tables in the simulation database '
                            '(columns, types, descriptions, row counts).',
+            'input_schema': {
+                'type': 'object',
+                'properties': {},
+                'required': [],
+            },
+        },
+        # --- Phase 2: Lineage + Fresnel tools ---
+        {
+            'name': 'rank_paths_by_energy',
+            'function': rank_paths_by_energy,
+            'description': 'Rank optical paths by terminal brightness (highest-energy first). '
+                           'Returns path_uuids for use with highlight_custom_rays_svg. '
+                           'Requires lineage.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'top_n': {
+                        'type': 'integer',
+                        'description': 'Maximum number of paths to return (highest-energy first).',
+                        'default': 10,
+                    },
+                },
+                'required': [],
+            },
+        },
+        {
+            'name': 'check_energy_conservation',
+            'function': check_energy_conservation,
+            'description': 'Verify energy conservation at each branching point in the ray tree. '
+                           'Requires lineage.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {},
+                'required': [],
+            },
+        },
+        {
+            'name': 'fresnel_transmittances',
+            'function': fresnel_transmittances_tool,
+            'description': 'Compute Fresnel power transmittances and reflectances at a '
+                           'planar dielectric interface. Standalone — no context needed.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'n1': {
+                        'type': 'number',
+                        'description': 'Refractive index of the incident medium.',
+                    },
+                    'n2': {
+                        'type': 'number',
+                        'description': 'Refractive index of the transmitting medium.',
+                    },
+                    'theta_i_deg': {
+                        'type': 'number',
+                        'description': 'Angle of incidence in degrees (from normal).',
+                    },
+                },
+                'required': ['n1', 'n2', 'theta_i_deg'],
+            },
         },
         # --- Legacy XML tools (superseded by query_rays, kept for backward compat) ---
         {
             'name': 'find_rays_inside_glass_xml',
             'function': find_rays_inside_glass_xml,
-            'description': 'Find rays inside a named glass, return XML string',
+            'description': 'Find rays inside a named glass, return XML string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'glass_name': {
+                        'type': 'string',
+                        'description': 'Name of the glass object in the scene.',
+                    },
+                },
+                'required': ['glass_name'],
+            },
         },
         {
             'name': 'find_rays_crossing_edge_xml',
             'function': find_rays_crossing_edge_xml,
-            'description': 'Find rays crossing a named glass edge, return XML string',
+            'description': 'Find rays crossing a named glass edge, return XML string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'glass_name': {
+                        'type': 'string',
+                        'description': 'Name of the glass object in the scene.',
+                    },
+                    'edge_label': {
+                        'type': 'string',
+                        'description': 'Label of the edge (short_label, long_label, or index).',
+                    },
+                },
+                'required': ['glass_name', 'edge_label'],
+            },
         },
         {
             'name': 'find_rays_by_angle_to_edge_xml',
             'function': find_rays_by_angle_to_edge_xml,
-            'description': 'Find rays by angle to a named glass edge, return XML string',
+            'description': 'Find rays by angle to a named glass edge, return XML string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'glass_name': {
+                        'type': 'string',
+                        'description': 'Name of the glass object in the scene.',
+                    },
+                    'edge_label': {
+                        'type': 'string',
+                        'description': 'Label of the reference edge.',
+                    },
+                    'min_angle': {
+                        'type': 'number',
+                        'description': 'Minimum angle from edge normal in degrees.',
+                        'default': 0,
+                    },
+                    'max_angle': {
+                        'type': 'number',
+                        'description': 'Maximum angle from edge normal in degrees.',
+                        'default': 90,
+                    },
+                },
+                'required': ['glass_name', 'edge_label'],
+            },
         },
         {
             'name': 'find_rays_by_polarization_xml',
             'function': find_rays_by_polarization_xml,
-            'description': 'Filter rays by degree of polarization, return XML string',
+            'description': 'Filter rays by degree of polarization, return XML string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'min_dop': {
+                        'type': 'number',
+                        'description': 'Minimum degree of polarization (0-1).',
+                        'default': 0,
+                    },
+                    'max_dop': {
+                        'type': 'number',
+                        'description': 'Maximum degree of polarization (0-1).',
+                        'default': 1,
+                    },
+                },
+                'required': [],
+            },
         },
+        # --- SVG rendering tools ---
         {
             'name': 'render_scene_svg',
             'function': render_scene_svg,
-            'description': 'Render the full scene and rays as an SVG string',
+            'description': 'Render the full scene and rays as an SVG string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {**_SVG_COMMON_PROPS},
+                'required': [],
+            },
         },
         {
             'name': 'highlight_rays_inside_glass_svg',
             'function': highlight_rays_inside_glass_svg,
-            'description': 'Render scene with rays inside a glass highlighted, return SVG string',
+            'description': 'Render scene with rays inside a glass highlighted, return SVG string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'glass_name': {
+                        'type': 'string',
+                        'description': 'Name of the glass object.',
+                    },
+                    'highlight_color': {
+                        'type': 'string',
+                        'description': 'CSS color for highlighted rays.',
+                        'default': 'yellow',
+                    },
+                    **_SVG_COMMON_PROPS,
+                },
+                'required': ['glass_name'],
+            },
         },
         {
             'name': 'highlight_rays_crossing_edge_svg',
             'function': highlight_rays_crossing_edge_svg,
-            'description': 'Render scene with rays crossing an edge highlighted, return SVG string',
+            'description': 'Render scene with rays crossing an edge highlighted, return SVG string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'glass_name': {
+                        'type': 'string',
+                        'description': 'Name of the glass object.',
+                    },
+                    'edge_label': {
+                        'type': 'string',
+                        'description': 'Label of the edge.',
+                    },
+                    'highlight_color': {
+                        'type': 'string',
+                        'description': 'CSS color for highlighted rays.',
+                        'default': 'yellow',
+                    },
+                    **_SVG_COMMON_PROPS,
+                },
+                'required': ['glass_name', 'edge_label'],
+            },
         },
         {
             'name': 'highlight_rays_by_polarization_svg',
             'function': highlight_rays_by_polarization_svg,
-            'description': 'Render scene with rays filtered by polarization highlighted, return SVG string',
+            'description': 'Render scene with rays filtered by polarization highlighted, return SVG string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'min_dop': {
+                        'type': 'number',
+                        'description': 'Minimum degree of polarization (0-1).',
+                        'default': 0,
+                    },
+                    'max_dop': {
+                        'type': 'number',
+                        'description': 'Maximum degree of polarization (0-1).',
+                        'default': 1,
+                    },
+                    'highlight_color': {
+                        'type': 'string',
+                        'description': 'CSS color for highlighted rays.',
+                        'default': 'magenta',
+                    },
+                    **_SVG_COMMON_PROPS,
+                },
+                'required': [],
+            },
         },
         {
             'name': 'highlight_custom_rays_svg',
             'function': highlight_custom_rays_svg,
-            'description': 'Render scene with specific rays (by uuid) highlighted, return SVG string',
+            'description': 'Render scene with specific rays (by uuid) highlighted, return SVG string.',
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'ray_uuids_csv': {
+                        'type': 'string',
+                        'description': 'Comma-separated ray uuids to highlight.',
+                    },
+                    'highlight_color': {
+                        'type': 'string',
+                        'description': 'CSS color for highlighted rays.',
+                        'default': 'yellow',
+                    },
+                    **_SVG_COMMON_PROPS,
+                },
+                'required': ['ray_uuids_csv'],
+            },
         },
     ]
 

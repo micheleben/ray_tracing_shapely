@@ -170,6 +170,24 @@ def _require_db() -> sqlite3.Connection:
     return _CONTEXT['db']
 
 
+def _require_lineage() -> 'RayLineage':
+    """
+    Return the RayLineage from context, or raise RuntimeError.
+
+    Returns:
+        The RayLineage object.
+
+    Raises:
+        RuntimeError: If no lineage is available in the context.
+    """
+    if 'lineage' not in _CONTEXT or _CONTEXT['lineage'] is None:
+        raise RuntimeError(
+            "No lineage available. Pass lineage to set_context() "
+            "or use set_context_from_result()."
+        )
+    return _CONTEXT['lineage']
+
+
 # =============================================================================
 # SQL query tools (Phase 1)
 # =============================================================================
@@ -234,6 +252,104 @@ def describe_schema() -> Dict[str, Any]:
         schema = get_schema_description(db)
         return _ok({"tables": schema})
     except RuntimeError as e:
+        return _error(str(e))
+
+
+# =============================================================================
+# Lineage + Fresnel tools (Phase 2)
+# =============================================================================
+
+def rank_paths_by_energy(top_n: int = 10) -> Dict[str, Any]:
+    """
+    Rank optical paths by terminal segment brightness, highest-energy first.
+
+    Returns a list of path summaries with uuid, energy, path_length,
+    path_types, and path_uuids (for use with highlight_custom_rays_svg).
+
+    Requires lineage: call set_context(scene, segments, lineage) or
+    set_context_from_result() first.
+
+    Args:
+        top_n: Maximum number of paths to return (default: 10).
+
+    Returns:
+        Structured dict with status and ranked path data, or error message.
+    """
+    try:
+        from .lineage_analysis import rank_paths_by_energy as _rank_paths
+
+        lineage = _require_lineage()
+        raw_results = _rank_paths(lineage)
+
+        # Convert to JSON-serializable: replace 'path' (Ray objects) with
+        # 'path_uuids' (string list) for use with highlight_custom_rays_svg
+        serializable = []
+        for entry in raw_results[:top_n]:
+            serializable.append({
+                'uuid': entry['uuid'],
+                'energy': entry['energy'],
+                'energy_s': entry['energy_s'],
+                'energy_p': entry['energy_p'],
+                'path_length': entry['path_length'],
+                'path_types': entry['path_types'],
+                'path_uuids': [r.uuid for r in entry['path']],
+            })
+
+        return _ok(serializable)
+    except (ValueError, RuntimeError) as e:
+        return _error(str(e))
+
+
+def check_energy_conservation() -> Dict[str, Any]:
+    """
+    Verify energy conservation at each branching point in the ray tree.
+
+    At each non-leaf segment, the sum of children's brightness should not
+    exceed the parent's brightness. Returns a diagnostic report.
+
+    Requires lineage: call set_context(scene, segments, lineage) or
+    set_context_from_result() first.
+
+    Returns:
+        Structured dict with status and conservation report, or error message.
+        On success, data contains 'is_valid', 'total_checks', 'violations',
+        'max_excess_ratio'.
+    """
+    try:
+        from .lineage_analysis import check_energy_conservation as _check_energy
+
+        lineage = _require_lineage()
+        result = _check_energy(lineage)
+        return _ok(result)
+    except RuntimeError as e:
+        return _error(str(e))
+
+
+def fresnel_transmittances_tool(
+    n1: float,
+    n2: float,
+    theta_i_deg: float,
+) -> Dict[str, Any]:
+    """
+    Compute Fresnel power transmittances and reflectances at an interface.
+
+    Standalone calculation — does not require set_context().
+
+    Args:
+        n1: Refractive index of the incident medium.
+        n2: Refractive index of the transmitting medium.
+        theta_i_deg: Angle of incidence in degrees (from normal).
+
+    Returns:
+        Structured dict with status and Fresnel data (T_s, T_p, R_s, R_p,
+        ratio_Tp_Ts, theta_t_deg), or error message if TIR occurs.
+    """
+    try:
+        from .fresnel_utils import fresnel_transmittances as _fresnel
+
+        result = _fresnel(n1, n2, theta_i_deg)
+        return _ok(result)
+    except ValueError as e:
         return _error(str(e))
 
 

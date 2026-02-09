@@ -518,3 +518,76 @@ natural-language summary of what the image shows, even if it never loads the
 PNG. For a text-only agent that's already enough ("the render shows 12
 highlighted rays inside Main Prism, 8 of which experienced TIR"). For a
 multimodal agent, it's a useful caption alongside the image.
+
+---
+
+## Implementation Notes
+
+### Phase 0 — DONE
+
+All 9 existing agentic tools in `agentic_tools.py` now return structured
+`{"status": "ok", "data": ...}` or `{"status": "error", "message": ...}`
+dicts instead of raising exceptions. Added `_ok()` and `_error()` helper
+functions. Updated return types from `str` to `Dict[str, Any]`.
+
+Fixed `test_phase7_agentic_svg_tools.py` — 5 SVG test functions updated to
+unwrap `result["data"]` since tools now return dicts instead of raw strings.
+
+Created `CONTRIBUTING.md` documenting the Phase 0 structured error convention
+alongside general project conventions.
+
+### Phase 1 — DONE
+
+Created `analysis/agentic_db.py` with in-memory SQLite infrastructure:
+
+- **5 tables**: `rays` (29 cols), `glass_objects` (10 cols), `edges` (13
+  cols), `ray_glass_membership` (precomputed containment), `ray_edge_crossing`
+  (precomputed intersection)
+- **SQL validation**: SELECT-only enforcement, forbidden keyword regex,
+  single-statement only
+- **Columnar results**: `{columns, rows, row_count}` format for token
+  efficiency, truncation at 200 rows
+
+Added `query_rays(sql)` and `describe_schema()` agentic tools. Database is
+created at `set_context()` time and closed at `clear_context()`. Spatial joins
+are precomputed using existing `glass_to_polygon()` and Shapely containment /
+intersection checks.
+
+Test: `test_phase1_agentic_db.py` — 17 tests covering schema, population,
+computed columns, spatial join correctness (validated against
+`find_rays_inside_glass` and `find_rays_crossing_edge`), SQL injection
+rejection, and registry integration.
+
+### Phase 2 — DONE
+
+Two deliverables:
+
+**1. JSON Schema definitions on all tools.** Every tool returned by
+`get_agentic_tools()` now includes an `input_schema` dict (proper JSON
+Schema with `type`, `properties`, `required`). This enables raw Claude API
+tool-use, LangChain `StructuredTool`, and any framework that needs explicit
+schemas. Shared SVG property fragments (`width`, `height`, `viewbox`) are
+defined once and spread into each SVG tool schema.
+
+**2. Three new agentic wrappers:**
+
+- **`rank_paths_by_energy(top_n=10)`** — delegates to
+  `lineage_analysis.rank_paths_by_energy()`, converts the `'path'` field
+  (containing Ray objects) to `'path_uuids'` (list of uuid strings for use
+  with `highlight_custom_rays_svg`). Returns top N results.
+- **`check_energy_conservation()`** — delegates to
+  `lineage_analysis.check_energy_conservation()`. Return value is already
+  JSON-serializable.
+- **`fresnel_transmittances_tool(n1, n2, theta_i_deg)`** — delegates to
+  `fresnel_utils.fresnel_transmittances()`. Standalone (no context needed).
+  Named `_tool` to avoid collision with the raw function in `__init__.py`.
+
+Added `_require_lineage()` helper that returns `_CONTEXT['lineage']` or a
+structured error if lineage was not passed to `set_context()`.
+
+Total agentic tools: 14 (2 SQL + 3 lineage/Fresnel + 4 legacy XML + 5 SVG).
+
+Test: `test_phase2_schemas_and_lineage.py` — 12 tests covering schema
+presence/validity, lineage tool results, JSON-serializability (no Ray objects
+in output), top_n slicing, error handling for missing lineage, Fresnel
+correctness including TIR error case, and registry integration.

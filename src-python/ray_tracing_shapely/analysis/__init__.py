@@ -90,6 +90,10 @@ from .agentic_tools import (
     # Phase 1: SQL query tools
     query_rays,
     describe_schema,
+    # Phase 2: Lineage + Fresnel agentic wrappers
+    rank_paths_by_energy,
+    check_energy_conservation,
+    fresnel_transmittances_tool,
     # Legacy XML tools (backward compat)
     find_rays_inside_glass_xml,
     find_rays_crossing_edge_xml,
@@ -151,6 +155,9 @@ __all__ = [
     'clear_context',
     'query_rays',
     'describe_schema',
+    'rank_paths_by_energy',
+    'check_energy_conservation',
+    'fresnel_transmittances_tool',
     'create_database',
     'find_rays_inside_glass_xml',
     'find_rays_crossing_edge_xml',
