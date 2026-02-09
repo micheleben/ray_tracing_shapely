@@ -53,6 +53,20 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
+# Structured error response helpers
+# =============================================================================
+
+def _ok(data: Any) -> Dict[str, Any]:
+    """Wrap a successful result in the standard agentic response envelope."""
+    return {"status": "ok", "data": data}
+
+
+def _error(message: str) -> Dict[str, str]:
+    """Wrap an error message in the standard agentic response envelope."""
+    return {"status": "error", "message": message}
+
+
+# =============================================================================
 # Context management
 # =============================================================================
 
@@ -135,7 +149,7 @@ def _require_context() -> tuple:
 # String-based tool wrappers
 # =============================================================================
 
-def find_rays_inside_glass_xml(glass_name: str) -> str:
+def find_rays_inside_glass_xml(glass_name: str) -> Dict[str, Any]:
     """
     Find rays whose midpoint is inside a named glass object.
 
@@ -143,19 +157,20 @@ def find_rays_inside_glass_xml(glass_name: str) -> str:
         glass_name: Name of the glass object in the scene.
 
     Returns:
-        XML string describing the matching rays.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
-        ValueError: If glass_name doesn't match any object.
+        Structured dict with status and XML data, or error message.
     """
-    scene, segments = _require_context()
-    glass = get_object_by_name(scene, glass_name)
-    rays = find_rays_inside_glass(segments, glass)
-    return rays_to_xml(rays)
+    try:
+        scene, segments = _require_context()
+        glass = get_object_by_name(scene, glass_name)
+        rays = find_rays_inside_glass(segments, glass)
+        return _ok(rays_to_xml(rays))
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
-def find_rays_crossing_edge_xml(glass_name: str, edge_label: str) -> str:
+def find_rays_crossing_edge_xml(glass_name: str, edge_label: str) -> Dict[str, Any]:
     """
     Find rays that cross a specific edge of a named glass object.
 
@@ -164,16 +179,17 @@ def find_rays_crossing_edge_xml(glass_name: str, edge_label: str) -> str:
         edge_label: Label of the edge (short_label, long_label, or index).
 
     Returns:
-        XML string describing the matching rays.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
-        ValueError: If glass_name or edge_label doesn't match.
+        Structured dict with status and XML data, or error message.
     """
-    scene, segments = _require_context()
-    glass = get_object_by_name(scene, glass_name)
-    rays = find_rays_crossing_edge(segments, glass, edge_label)
-    return rays_to_xml(rays)
+    try:
+        scene, segments = _require_context()
+        glass = get_object_by_name(scene, glass_name)
+        rays = find_rays_crossing_edge(segments, glass, edge_label)
+        return _ok(rays_to_xml(rays))
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
 def find_rays_by_angle_to_edge_xml(
@@ -181,7 +197,7 @@ def find_rays_by_angle_to_edge_xml(
     edge_label: str,
     min_angle: float = 0.0,
     max_angle: float = 90.0,
-) -> str:
+) -> Dict[str, Any]:
     """
     Find rays within an angle range relative to a named glass edge.
 
@@ -192,24 +208,25 @@ def find_rays_by_angle_to_edge_xml(
         max_angle: Maximum angle from edge normal in degrees (default: 90).
 
     Returns:
-        XML string describing the matching rays.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
-        ValueError: If glass_name or edge_label doesn't match.
+        Structured dict with status and XML data, or error message.
     """
-    scene, segments = _require_context()
-    glass = get_object_by_name(scene, glass_name)
-    rays = find_rays_by_angle_to_edge(segments, glass, edge_label,
-                                       min_angle=min_angle,
-                                       max_angle=max_angle)
-    return rays_to_xml(rays)
+    try:
+        scene, segments = _require_context()
+        glass = get_object_by_name(scene, glass_name)
+        rays = find_rays_by_angle_to_edge(segments, glass, edge_label,
+                                           min_angle=min_angle,
+                                           max_angle=max_angle)
+        return _ok(rays_to_xml(rays))
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
 def find_rays_by_polarization_xml(
     min_dop: float = 0.0,
     max_dop: float = 1.0,
-) -> str:
+) -> Dict[str, Any]:
     """
     Filter rays by degree of polarization.
 
@@ -218,14 +235,16 @@ def find_rays_by_polarization_xml(
         max_dop: Maximum degree of polarization (0-1, default: 1).
 
     Returns:
-        XML string describing the matching rays.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
+        Structured dict with status and XML data, or error message.
     """
-    _, segments = _require_context()
-    rays = find_rays_by_polarization(segments, min_dop=min_dop, max_dop=max_dop)
-    return rays_to_xml(rays)
+    try:
+        _, segments = _require_context()
+        rays = find_rays_by_polarization(segments, min_dop=min_dop, max_dop=max_dop)
+        return _ok(rays_to_xml(rays))
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
 # =============================================================================
@@ -317,7 +336,7 @@ def render_scene_svg(
     width: int = 800,
     height: int = 600,
     viewbox: str = 'auto',
-) -> str:
+) -> Dict[str, Any]:
     """
     Render the full scene and all rays as an SVG string.
 
@@ -331,18 +350,20 @@ def render_scene_svg(
             from scene bounds.
 
     Returns:
-        SVG string.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
+        Structured dict with status and SVG data, or error message.
     """
-    from ..core.svg_renderer import SVGRenderer
+    try:
+        from ..core.svg_renderer import SVGRenderer
 
-    scene, segments = _require_context()
-    vb = _parse_viewbox(viewbox, scene)
-    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
-    renderer.draw_scene(scene, segments)
-    return renderer.to_string()
+        scene, segments = _require_context()
+        vb = _parse_viewbox(viewbox, scene)
+        renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+        renderer.draw_scene(scene, segments)
+        return _ok(renderer.to_string())
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
 def highlight_rays_inside_glass_svg(
@@ -351,7 +372,7 @@ def highlight_rays_inside_glass_svg(
     width: int = 800,
     height: int = 600,
     viewbox: str = 'auto',
-) -> str:
+) -> Dict[str, Any]:
     """
     Render the scene with rays inside a glass object highlighted.
 
@@ -365,28 +386,29 @@ def highlight_rays_inside_glass_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        SVG string with highlighted rays.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
-        ValueError: If glass_name doesn't match any object.
+        Structured dict with status and SVG data, or error message.
     """
-    from ..core.svg_renderer import SVGRenderer
+    try:
+        from ..core.svg_renderer import SVGRenderer
 
-    scene, segments = _require_context()
-    glass = get_object_by_name(scene, glass_name)
-    rays = find_rays_inside_glass(segments, glass)
-    ray_uuids = {r.uuid for r in rays}
+        scene, segments = _require_context()
+        glass = get_object_by_name(scene, glass_name)
+        rays = find_rays_inside_glass(segments, glass)
+        ray_uuids = {r.uuid for r in rays}
 
-    vb = _parse_viewbox(viewbox, scene)
-    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
-    renderer.draw_scene_with_highlights(
-        scene, segments,
-        highlight_ray_uuids=ray_uuids,
-        highlight_glass_names=[glass_name],
-        highlight_color=highlight_color,
-    )
-    return renderer.to_string()
+        vb = _parse_viewbox(viewbox, scene)
+        renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+        renderer.draw_scene_with_highlights(
+            scene, segments,
+            highlight_ray_uuids=ray_uuids,
+            highlight_glass_names=[glass_name],
+            highlight_color=highlight_color,
+        )
+        return _ok(renderer.to_string())
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
 def highlight_rays_crossing_edge_svg(
@@ -396,7 +418,7 @@ def highlight_rays_crossing_edge_svg(
     width: int = 800,
     height: int = 600,
     viewbox: str = 'auto',
-) -> str:
+) -> Dict[str, Any]:
     """
     Render the scene with rays crossing a specific edge highlighted.
 
@@ -412,28 +434,29 @@ def highlight_rays_crossing_edge_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        SVG string with highlighted rays and edge.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
-        ValueError: If glass_name or edge_label doesn't match.
+        Structured dict with status and SVG data, or error message.
     """
-    from ..core.svg_renderer import SVGRenderer
+    try:
+        from ..core.svg_renderer import SVGRenderer
 
-    scene, segments = _require_context()
-    glass = get_object_by_name(scene, glass_name)
-    rays = find_rays_crossing_edge(segments, glass, edge_label)
-    ray_uuids = {r.uuid for r in rays}
+        scene, segments = _require_context()
+        glass = get_object_by_name(scene, glass_name)
+        rays = find_rays_crossing_edge(segments, glass, edge_label)
+        ray_uuids = {r.uuid for r in rays}
 
-    vb = _parse_viewbox(viewbox, scene)
-    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
-    renderer.draw_scene_with_highlights(
-        scene, segments,
-        highlight_ray_uuids=ray_uuids,
-        highlight_edge_specs=[(glass_name, edge_label)],
-        highlight_color=highlight_color,
-    )
-    return renderer.to_string()
+        vb = _parse_viewbox(viewbox, scene)
+        renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+        renderer.draw_scene_with_highlights(
+            scene, segments,
+            highlight_ray_uuids=ray_uuids,
+            highlight_edge_specs=[(glass_name, edge_label)],
+            highlight_color=highlight_color,
+        )
+        return _ok(renderer.to_string())
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
 def highlight_rays_by_polarization_svg(
@@ -443,7 +466,7 @@ def highlight_rays_by_polarization_svg(
     width: int = 800,
     height: int = 600,
     viewbox: str = 'auto',
-) -> str:
+) -> Dict[str, Any]:
     """
     Render the scene with rays filtered by degree of polarization highlighted.
 
@@ -456,25 +479,27 @@ def highlight_rays_by_polarization_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        SVG string with highlighted rays.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
+        Structured dict with status and SVG data, or error message.
     """
-    from ..core.svg_renderer import SVGRenderer
+    try:
+        from ..core.svg_renderer import SVGRenderer
 
-    scene, segments = _require_context()
-    rays = find_rays_by_polarization(segments, min_dop=min_dop, max_dop=max_dop)
-    ray_uuids = {r.uuid for r in rays}
+        scene, segments = _require_context()
+        rays = find_rays_by_polarization(segments, min_dop=min_dop, max_dop=max_dop)
+        ray_uuids = {r.uuid for r in rays}
 
-    vb = _parse_viewbox(viewbox, scene)
-    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
-    renderer.draw_scene_with_highlights(
-        scene, segments,
-        highlight_ray_uuids=ray_uuids,
-        highlight_color=highlight_color,
-    )
-    return renderer.to_string()
+        vb = _parse_viewbox(viewbox, scene)
+        renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+        renderer.draw_scene_with_highlights(
+            scene, segments,
+            highlight_ray_uuids=ray_uuids,
+            highlight_color=highlight_color,
+        )
+        return _ok(renderer.to_string())
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
 
 
 def highlight_custom_rays_svg(
@@ -483,7 +508,7 @@ def highlight_custom_rays_svg(
     width: int = 800,
     height: int = 600,
     viewbox: str = 'auto',
-) -> str:
+) -> Dict[str, Any]:
     """
     Render the scene with a specific set of rays highlighted by uuid.
 
@@ -498,21 +523,23 @@ def highlight_custom_rays_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        SVG string.
-
-    Raises:
-        RuntimeError: If set_context() has not been called.
+        Structured dict with status and SVG data, or error message.
     """
-    from ..core.svg_renderer import SVGRenderer
+    try:
+        from ..core.svg_renderer import SVGRenderer
 
-    scene, segments = _require_context()
-    ray_uuids = set(u.strip() for u in ray_uuids_csv.split(',') if u.strip())
+        scene, segments = _require_context()
+        ray_uuids = set(u.strip() for u in ray_uuids_csv.split(',') if u.strip())
 
-    vb = _parse_viewbox(viewbox, scene)
-    renderer = SVGRenderer(width=width, height=height, viewbox=vb)
-    renderer.draw_scene_with_highlights(
-        scene, segments,
-        highlight_ray_uuids=ray_uuids,
-        highlight_color=highlight_color,
-    )
-    return renderer.to_string()
+        vb = _parse_viewbox(viewbox, scene)
+        renderer = SVGRenderer(width=width, height=height, viewbox=vb)
+        renderer.draw_scene_with_highlights(
+            scene, segments,
+            highlight_ray_uuids=ray_uuids,
+            highlight_color=highlight_color,
+        )
+        return _ok(renderer.to_string())
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
+        return _error(str(e))
