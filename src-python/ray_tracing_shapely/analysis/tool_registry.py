@@ -291,6 +291,16 @@ _REGISTRY: List[Dict[str, str]] = [
         'description': "Compute Brewster's angle (where R_p = 0)",
     },
     # -------------------------------------------------------------------------
+    # analysis.agentic_db -- In-memory SQLite database for agentic queries
+    # -------------------------------------------------------------------------
+    {
+        'module': 'analysis.agentic_db',
+        'name': 'create_database',
+        'kind': 'function',
+        'signature': '(scene, segments) -> sqlite3.Connection',
+        'description': 'Create and populate in-memory SQLite database from simulation data',
+    },
+    # -------------------------------------------------------------------------
     # analysis.agentic_tools -- JSON-serializable wrappers for LLM tool-use
     # -------------------------------------------------------------------------
     {
@@ -307,6 +317,21 @@ _REGISTRY: List[Dict[str, str]] = [
         'signature': '(scene, result) -> None',
         'description': 'Populate agentic tool context from a SimulationResult',
     },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'query_rays',
+        'kind': 'function',
+        'signature': '(sql: str) -> Dict[str, Any]',
+        'description': 'Run a read-only SQL SELECT query against the simulation database',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'describe_schema',
+        'kind': 'function',
+        'signature': '() -> Dict[str, Any]',
+        'description': 'Return schema of all tables in the simulation database',
+    },
+    # Legacy XML tools (superseded by query_rays, kept for backward compat)
     {
         'module': 'analysis.agentic_tools',
         'name': 'find_rays_inside_glass_xml',
@@ -460,6 +485,8 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         List of dicts with tool metadata and callables.
     """
     from .agentic_tools import (
+        query_rays,
+        describe_schema,
         find_rays_inside_glass_xml,
         find_rays_crossing_edge_xml,
         find_rays_by_angle_to_edge_xml,
@@ -472,6 +499,22 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
     )
 
     return [
+        # --- Phase 1: SQL query tools ---
+        {
+            'name': 'query_rays',
+            'function': query_rays,
+            'description': 'Run a read-only SQL SELECT query against the simulation database. '
+                           'Tables: rays, glass_objects, edges, ray_glass_membership, '
+                           'ray_edge_crossing. Only SELECT is allowed. '
+                           'Use describe_schema() to see column definitions.',
+        },
+        {
+            'name': 'describe_schema',
+            'function': describe_schema,
+            'description': 'Return schema of all tables in the simulation database '
+                           '(columns, types, descriptions, row counts).',
+        },
+        # --- Legacy XML tools (superseded by query_rays, kept for backward compat) ---
         {
             'name': 'find_rays_inside_glass_xml',
             'function': find_rays_inside_glass_xml,

@@ -87,10 +87,17 @@ from .agentic_tools import (
     set_context_from_result,
     get_context,
     clear_context,
+    # Phase 1: SQL query tools
+    query_rays,
+    describe_schema,
+    # Legacy XML tools (backward compat)
     find_rays_inside_glass_xml,
     find_rays_crossing_edge_xml,
     find_rays_by_angle_to_edge_xml,
     find_rays_by_polarization_xml,
+)
+from .agentic_db import (
+    create_database,
 )
 
 __all__ = [
@@ -142,6 +149,9 @@ __all__ = [
     'set_context_from_result',
     'get_context',
     'clear_context',
+    'query_rays',
+    'describe_schema',
+    'create_database',
     'find_rays_inside_glass_xml',
     'find_rays_crossing_edge_xml',
     'find_rays_by_angle_to_edge_xml',

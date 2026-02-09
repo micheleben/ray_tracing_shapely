@@ -34,6 +34,8 @@ Usage:
 """
 
 from __future__ import annotations
+
+import sqlite3
 from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 
 from .ray_geometry_queries import (
@@ -86,7 +88,9 @@ def set_context(
     """
     Register simulation objects for use by agentic tool wrappers.
 
-    Must be called before any agentic tool is invoked.
+    Must be called before any agentic tool is invoked. Also creates an
+    in-memory SQLite database with precomputed spatial relationships
+    for use by query_rays() and describe_schema().
 
     Args:
         scene: The Scene object (needed to resolve glass names via
@@ -94,9 +98,12 @@ def set_context(
         segments: The ray segments from the simulation.
         lineage: Optional RayLineage for lineage-based tools.
     """
+    from .agentic_db import create_database
+
     _CONTEXT['scene'] = scene
     _CONTEXT['segments'] = segments
     _CONTEXT['lineage'] = lineage
+    _CONTEXT['db'] = create_database(scene, segments)
 
 
 def set_context_from_result(
@@ -127,6 +134,9 @@ def get_context() -> Dict[str, Any]:
 
 def clear_context() -> None:
     """Clear the context (e.g. between simulation runs)."""
+    db = _CONTEXT.get('db')
+    if db is not None:
+        db.close()
     _CONTEXT.clear()
 
 
@@ -145,8 +155,90 @@ def _require_context() -> tuple:
     return _CONTEXT['scene'], _CONTEXT['segments']
 
 
+def _require_db() -> sqlite3.Connection:
+    """
+    Return the SQLite connection from context, or raise RuntimeError.
+
+    Returns:
+        The sqlite3.Connection.
+
+    Raises:
+        RuntimeError: If set_context() has not been called or DB is missing.
+    """
+    if 'db' not in _CONTEXT:
+        raise RuntimeError(_NO_CONTEXT_MSG)
+    return _CONTEXT['db']
+
+
 # =============================================================================
-# String-based tool wrappers
+# SQL query tools (Phase 1)
+# =============================================================================
+
+def query_rays(sql: str) -> Dict[str, Any]:
+    """
+    Run a read-only SQL query against the simulation database.
+
+    The database contains five tables:
+    - rays: One row per ray segment with all properties
+    - glass_objects: One row per glass object in the scene
+    - edges: One row per edge of each glass object
+    - ray_glass_membership: Join table (ray_uuid, glass_uuid) for rays inside glass
+    - ray_edge_crossing: Join table for rays crossing glass edges
+
+    Use describe_schema() to see full table definitions.
+
+    Only SELECT statements are allowed. Results are limited to 200 rows
+    by default -- use LIMIT or more specific WHERE conditions for large results.
+
+    Args:
+        sql: A SQL SELECT query string.
+
+    Returns:
+        Structured dict with status and query results, or error message.
+        On success, data contains 'columns', 'rows', and 'row_count'.
+
+    Example queries:
+        "SELECT COUNT(*) as n, AVG(brightness_total) as avg_b FROM rays"
+        "SELECT r.uuid, r.brightness_total FROM rays r
+         JOIN ray_glass_membership m ON r.uuid = m.ray_uuid
+         WHERE m.glass_name = 'Main Prism'"
+        "SELECT DISTINCT glass_name FROM ray_glass_membership"
+    """
+    try:
+        from .agentic_db import execute_query
+        db = _require_db()
+        result = execute_query(db, sql)
+        return _ok(result)
+    except ValueError as e:
+        return _error(str(e))
+    except sqlite3.OperationalError as e:
+        return _error(f"SQL error: {e}")
+    except RuntimeError as e:
+        return _error(str(e))
+
+
+def describe_schema() -> Dict[str, Any]:
+    """
+    Return the schema of the simulation database.
+
+    Lists all tables, their columns (with types and descriptions),
+    and current row counts. Use this to discover what data is available
+    before writing SQL queries with query_rays().
+
+    Returns:
+        Structured dict with table definitions and row counts.
+    """
+    try:
+        from .agentic_db import get_schema_description
+        db = _require_db()
+        schema = get_schema_description(db)
+        return _ok({"tables": schema})
+    except RuntimeError as e:
+        return _error(str(e))
+
+
+# =============================================================================
+# Legacy XML tool wrappers (superseded by query_rays, kept for backward compat)
 # =============================================================================
 
 def find_rays_inside_glass_xml(glass_name: str) -> Dict[str, Any]:

@@ -125,7 +125,9 @@ def test_compute_scene_bounds(scene):
 def test_render_scene_svg(segments):
     """Test 4: render_scene_svg produces valid SVG."""
     print("\nTest 4: render_scene_svg")
-    svg = render_scene_svg()
+    result = render_scene_svg()
+    assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
+    svg = result['data']
     assert '<svg' in svg and '</svg>' in svg, "Missing <svg> tags"
     assert 'layer-objects' in svg, "Missing layer-objects"
     assert 'layer-rays' in svg, "Missing layer-rays"
@@ -136,7 +138,9 @@ def test_render_scene_svg(segments):
 def test_render_scene_svg_explicit_viewbox():
     """Test 5: render_scene_svg with explicit viewbox."""
     print("\nTest 5: render_scene_svg (explicit viewbox)")
-    svg = render_scene_svg(width=600, height=400, viewbox='100,30,200,100')
+    result = render_scene_svg(width=600, height=400, viewbox='100,30,200,100')
+    assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
+    svg = result['data']
     assert '<svg' in svg, "Missing <svg> tag"
     print(f"  PASS: {len(svg)} chars")
     return True
@@ -145,7 +149,9 @@ def test_render_scene_svg_explicit_viewbox():
 def test_highlight_rays_inside_glass_svg():
     """Test 6: highlight_rays_inside_glass_svg."""
     print("\nTest 6: highlight_rays_inside_glass_svg")
-    svg = highlight_rays_inside_glass_svg('test_prism')
+    result = highlight_rays_inside_glass_svg('test_prism')
+    assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
+    svg = result['data']
     assert '<svg' in svg, "Missing <svg> tag"
     print(f"  PASS: {len(svg)} chars")
     return True
@@ -159,7 +165,9 @@ def test_highlight_rays_crossing_edge_svg(prism):
     assert labels, "No edge labels found on prism"
     print(f"  Edge labels found: {labels}")
 
-    svg = highlight_rays_crossing_edge_svg('test_prism', labels[0])
+    result = highlight_rays_crossing_edge_svg('test_prism', labels[0])
+    assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
+    svg = result['data']
     assert '<svg' in svg, "Missing <svg> tag"
     print(f"  PASS: highlighted edge '{labels[0]}', {len(svg)} chars")
     return True
@@ -168,7 +176,9 @@ def test_highlight_rays_crossing_edge_svg(prism):
 def test_highlight_rays_by_polarization_svg():
     """Test 8: highlight_rays_by_polarization_svg."""
     print("\nTest 8: highlight_rays_by_polarization_svg")
-    svg = highlight_rays_by_polarization_svg(min_dop=0.0, max_dop=1.0)
+    result = highlight_rays_by_polarization_svg(min_dop=0.0, max_dop=1.0)
+    assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
+    svg = result['data']
     assert '<svg' in svg, "Missing <svg> tag"
     print(f"  PASS: {len(svg)} chars")
     return True
@@ -182,7 +192,9 @@ def test_highlight_custom_rays_svg(segments):
         return True
     uuids = [s.uuid for s in segments[:2]]
     csv_str = ','.join(uuids)
-    svg = highlight_custom_rays_svg(csv_str, highlight_color='red')
+    result = highlight_custom_rays_svg(csv_str, highlight_color='red')
+    assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
+    svg = result['data']
     assert '<svg' in svg, "Missing <svg> tag"
     print(f"  PASS: highlighted {len(uuids)} rays, {len(svg)} chars")
     return True
