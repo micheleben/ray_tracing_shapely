@@ -137,11 +137,12 @@ CREATE TABLE ray_glass_membership (
 
 _SCHEMA_RAY_EDGE_CROSSING = """\
 CREATE TABLE ray_edge_crossing (
-    ray_uuid        TEXT NOT NULL,
-    glass_uuid      TEXT NOT NULL,
-    glass_name      TEXT,
-    edge_index      INTEGER NOT NULL,
+    ray_uuid         TEXT NOT NULL,
+    glass_uuid       TEXT NOT NULL,
+    glass_name       TEXT,
+    edge_index       INTEGER NOT NULL,
     edge_short_label TEXT NOT NULL,
+    angle_to_normal  REAL NOT NULL,
     PRIMARY KEY (ray_uuid, glass_uuid, edge_index)
 );
 """
@@ -221,8 +222,73 @@ _COLUMN_DESCRIPTIONS: Dict[str, List[Dict[str, str]]] = {
         {"name": "glass_name", "type": "TEXT", "description": "Glass name (denormalized)"},
         {"name": "edge_index", "type": "INTEGER", "description": "Index of the crossed edge"},
         {"name": "edge_short_label", "type": "TEXT", "description": "Short label of the crossed edge"},
+        {"name": "angle_to_normal", "type": "REAL",
+         "description": "Angle between ray direction and edge outward normal in degrees "
+                        "(0 = head-on / perpendicular to edge, 90 = grazing / parallel to edge). "
+                        "Note: multiple ray segments can cross the same edge (e.g. an interior "
+                        "refracted ray crosses both its entry and exit edges). Join with the rays "
+                        "table and filter by interaction_type to isolate a specific segment."},
     ],
 }
+
+
+# =============================================================================
+# Geometry helpers for angle computation
+# =============================================================================
+
+def _outward_normal(edge_desc, centroid_x: float, centroid_y: float) -> tuple:
+    """
+    Compute the outward-pointing unit normal of an edge.
+
+    Same algorithm as ray_geometry_queries._edge_outward_normal but takes
+    the centroid coordinates directly, avoiding a redundant
+    glass_to_polygon() call.
+
+    Args:
+        edge_desc: An EdgeDescription with p1, p2, midpoint attributes.
+        centroid_x: X coordinate of the owning glass polygon centroid.
+        centroid_y: Y coordinate of the owning glass polygon centroid.
+
+    Returns:
+        (nx, ny) unit normal pointing outward from the glass.
+    """
+    dx = edge_desc.p2.x - edge_desc.p1.x
+    dy = edge_desc.p2.y - edge_desc.p1.y
+    length = math.sqrt(dx * dx + dy * dy)
+    if length < 1e-12:
+        return (0.0, 0.0)
+
+    # Two candidate normals (perpendicular to edge direction)
+    n1 = (-dy / length, dx / length)
+    n2 = (dy / length, -dx / length)
+
+    # Vector from edge midpoint to centroid
+    to_cx = centroid_x - edge_desc.midpoint.x
+    to_cy = centroid_y - edge_desc.midpoint.y
+
+    # The outward normal has negative dot product with to-centroid vector
+    dot1 = n1[0] * to_cx + n1[1] * to_cy
+    if dot1 < 0:
+        return n1
+    return n2
+
+
+def _angle_between_ray_and_normal(
+    ray_dx: float, ray_dy: float, normal: tuple,
+) -> float:
+    """
+    Compute the angle (degrees) between a ray direction and an edge normal.
+
+    Uses abs(dot product) so the result is independent of ray travel
+    direction (entry vs exit).
+
+    Returns:
+        Angle in degrees: 0 = head-on (perpendicular to edge),
+        90 = grazing (parallel to edge).
+    """
+    dot = abs(ray_dx * normal[0] + ray_dy * normal[1])
+    dot = max(0.0, min(1.0, dot))  # clamp for numerical safety
+    return math.degrees(math.acos(dot))
 
 
 # =============================================================================
@@ -329,6 +395,7 @@ def _populate_glass_and_spatial(
     glasses = [obj for obj in scene.objs if isinstance(obj, BaseGlass)]
 
     # Precompute ray geometries once
+    # ray_lines stores (uuid, LineString, unit_dx, unit_dy) for angle computation
     ray_mids: List[tuple] = []
     ray_lines: List[tuple] = []
     for ray in segments:
@@ -336,7 +403,14 @@ def _populate_glass_and_spatial(
         mx = (p1x + p2x) / 2.0
         my = (p1y + p2y) / 2.0
         ray_mids.append((ray.uuid, Point(mx, my)))
-        ray_lines.append((ray.uuid, LineString([(p1x, p1y), (p2x, p2y)])))
+        dx = p2x - p1x
+        dy = p2y - p1y
+        ray_len = math.sqrt(dx * dx + dy * dy)
+        if ray_len < 1e-12:
+            rdx, rdy = 0.0, 0.0
+        else:
+            rdx, rdy = dx / ray_len, dy / ray_len
+        ray_lines.append((ray.uuid, LineString([(p1x, p1y), (p2x, p2y)]), rdx, rdy))
 
     membership_rows: List[tuple] = []
     crossing_rows: List[tuple] = []
@@ -378,14 +452,17 @@ def _populate_glass_and_spatial(
             if poly.contains(mid):
                 membership_rows.append((ray_uuid, glass_uuid, glass_name))
 
-        # Precompute ray-edge crossings
+        # Precompute ray-edge crossings with angle to normal
+        cx, cy = centroid.x, centroid.y
         for ed in edge_descs:
             edge_line = LineString([(ed.p1.x, ed.p1.y), (ed.p2.x, ed.p2.y)])
-            for ray_uuid, ray_line in ray_lines:
+            normal = _outward_normal(ed, cx, cy)
+            for ray_uuid, ray_line, rdx, rdy in ray_lines:
                 if ray_line.intersects(edge_line):
+                    angle = _angle_between_ray_and_normal(rdx, rdy, normal)
                     crossing_rows.append(
                         (ray_uuid, glass_uuid, glass_name,
-                         ed.index, ed.short_label)
+                         ed.index, ed.short_label, angle)
                     )
 
     conn.executemany(
@@ -393,7 +470,7 @@ def _populate_glass_and_spatial(
         membership_rows,
     )
     conn.executemany(
-        'INSERT INTO ray_edge_crossing VALUES (?,?,?,?,?)',
+        'INSERT INTO ray_edge_crossing VALUES (?,?,?,?,?,?)',
         crossing_rows,
     )
 

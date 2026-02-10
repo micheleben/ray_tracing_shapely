@@ -151,3 +151,56 @@ GROUP BY c.edge_short_label
 ```
 
 This completely subsumes `find_rays_by_angle_to_edge_xml` with full composability, no proximity heuristic needed (it uses actual intersection), and unambiguous semantics (column description in `describe_schema()` spells out the convention).
+
+
+## Implementation Notes
+
+Implementation completed. Option B was chosen for the normal helper. All four touch-points were applied to `agentic_db.py`. No other files were modified.
+
+### Touch-point 1: Schema DDL (line ~138)
+Added `angle_to_normal REAL NOT NULL` column to `_SCHEMA_RAY_EDGE_CROSSING`, positioned after `edge_short_label` and before the PRIMARY KEY constraint. Column alignment was adjusted to match the existing style.
+
+### Touch-point 2: Column metadata (line ~219)
+Added the `angle_to_normal` entry to the `"ray_edge_crossing"` list in `_COLUMN_DESCRIPTIONS` with description:
+`"Angle between ray direction and edge outward normal in degrees (0 = head-on / perpendicular to edge, 90 = grazing / parallel to edge)"`
+
+### Touch-point 3: Geometry helpers and crossing loop
+**Option B was implemented** -- two local helper functions were added to `agentic_db.py` in a new section `"Geometry helpers for angle computation"`, placed between the column metadata and the database creation section:
+
+- `_outward_normal(edge_desc, centroid_x, centroid_y)` -- Same algorithm as `ray_geometry_queries._edge_outward_normal` but takes centroid coordinates directly instead of a `BaseGlass` object. Avoids importing a private function and avoids the redundant `glass_to_polygon()` call since `_populate_glass_and_spatial` already has the centroid.
+
+- `_angle_between_ray_and_normal(ray_dx, ray_dy, normal)` -- Computes `math.degrees(math.acos(abs(dot)))` with clamping. Factored out as a named function for clarity, matching the logic at `ray_geometry_queries.py`:361-367.
+
+**Ray direction precomputation:** The `ray_lines` list was extended from `(uuid, LineString)` to `(uuid, LineString, unit_dx, unit_dy)`. The unit direction vector is computed once per ray during the existing precomputation loop, avoiding redundant work inside the O(rays x edges) crossing loop.
+
+**Crossing loop changes:** Before the inner edge loop, `cx, cy = centroid.x, centroid.y` is extracted once per glass. For each edge, `_outward_normal(ed, cx, cy)` is called once. For each crossing, `_angle_between_ray_and_normal(rdx, rdy, normal)` computes the angle, which is appended as the 6th tuple element.
+
+### Touch-point 4: INSERT statement (line ~469)
+Updated from `VALUES (?,?,?,?,?)` to `VALUES (?,?,?,?,?,?)` -- 6 placeholders matching the 6-element tuples in `crossing_rows`.
+
+### Note: multiple ray segments can cross the same edge
+The crossing table records every (ray_segment, edge) geometric intersection. In a typical prism scenario the ray tracer produces three segments: the incoming source ray, the refracted interior ray, and the exit ray. The interior ray geometrically intersects *both* the entry edge and the exit edge, so the table will contain two rows for it — each with a different `angle_to_normal` because the two edges have different outward normals.
+
+Concretely, for a ray entering edge A and exiting edge B:
+
+| ray segment      | edge crossed | angle_to_normal meaning               |
+|------------------|--------------|----------------------------------------|
+| source ray       | edge A       | angle of incidence at A (exterior)     |
+| interior ray     | edge A       | angle of refraction at A (interior)    |
+| interior ray     | edge B       | angle of incidence at B (interior)     |
+| exit ray         | edge B       | angle of refraction at B (exterior)    |
+
+The data is unambiguous — the composite key `(ray_uuid, glass_uuid, edge_index)` identifies each crossing uniquely — but an LLM agent querying the table needs to join on the `rays` table and filter by `interaction_type` to isolate the specific segment of interest. For example, to get only the *incoming* angle of incidence at an edge:
+
+```sql
+SELECT c.angle_to_normal
+FROM ray_edge_crossing c
+JOIN rays r ON r.uuid = c.ray_uuid
+WHERE c.edge_short_label = 'S' AND r.interaction_type = 'source'
+```
+
+### What was NOT changed
+- `ray_geometry_queries.py` -- untouched, `_edge_outward_normal` and `find_rays_by_angle_to_edge` remain as-is for non-SQL callers.
+- `agentic_tools.py` -- untouched, the old `_xml` wrappers are superseded.
+- `tool_registry.py` -- untouched, the `query_rays(sql: str)` tool is schema-generic.
+- No new imports were added (the existing `import math` already covered the needs).
