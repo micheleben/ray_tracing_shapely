@@ -14,4 +14,5 @@ Edge 1: Exit Face (X) | facing East Edge (E)
 Edge 2: Measuring Surface (M) | facing North Edge (N)
 Edge 3: Entrance Face (E) | facing West Edge (W)'
 
-The peculiarity of this geometry is that the lenght of the Measuring Surface and the height of the prism are completely calculated by the angle 
+The peculiarity of this geometry is that the lenght of the Measuring Surface and the height of the prism are completely calculated by the angle of the total internal reflection.
+If we call 

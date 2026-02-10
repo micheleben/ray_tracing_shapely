@@ -99,6 +99,12 @@ from .agentic_tools import (
     find_rays_crossing_edge_xml,
     find_rays_by_angle_to_edge_xml,
     find_rays_by_polarization_xml,
+    # Phase 3: SVG rendering tools
+    render_scene_svg,
+    highlight_rays_inside_glass_svg,
+    highlight_rays_crossing_edge_svg,
+    highlight_rays_by_polarization_svg,
+    highlight_custom_rays_svg,
 )
 from .render_result import (
     save_render,
@@ -170,5 +176,11 @@ __all__ = [
     'find_rays_crossing_edge_xml',
     'find_rays_by_angle_to_edge_xml',
     'find_rays_by_polarization_xml',
+    # Phase 3: SVG rendering tools
+    'render_scene_svg',
+    'highlight_rays_inside_glass_svg',
+    'highlight_rays_crossing_edge_svg',
+    'highlight_rays_by_polarization_svg',
+    'highlight_custom_rays_svg',
 ]
 
