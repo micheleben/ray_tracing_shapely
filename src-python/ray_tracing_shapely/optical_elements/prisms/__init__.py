@@ -151,6 +151,42 @@ def refractometer_prism(
     )
 
 
+def refractometer_prism_from_critical_ray_path(
+    scene: 'Scene',
+    n_prism: float,
+    n_target: float,
+    ray_path_length: float,
+    position: Tuple[float, float] = (0.0, 0.0),
+    rotation: float = 0.0
+) -> RefractometerPrism:
+    """
+    Create a refractometer prism from critical ray path constraints.
+
+    All prism dimensions are derived from the TIR critical angle
+    (determined by n_prism and n_target) and the desired total ray
+    path length inside the prism.
+
+    Args:
+        scene: The scene this prism belongs to.
+        n_prism: Refractive index of the prism material.
+        n_target: Refractive index of the target sample.
+        ray_path_length: Total ray path length (L) inside the prism.
+        position: Reference point coordinates.
+        rotation: Rotation angle in degrees.
+
+    Returns:
+        A new RefractometerPrism instance.
+    """
+    return RefractometerPrism.from_critical_ray_path(
+        scene=scene,
+        n_prism=n_prism,
+        n_target=n_target,
+        ray_path_length=ray_path_length,
+        position=position,
+        rotation=rotation
+    )
+
+
 __all__ = [
     # Base class
     'BasePrism',
@@ -162,6 +198,7 @@ __all__ = [
     'equilateral_prism',
     'right_angle_prism',
     'refractometer_prism',
+    'refractometer_prism_from_critical_ray_path',
     # Utility modules
     'prism_utils',
     'tir_utils',

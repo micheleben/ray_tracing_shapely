@@ -318,6 +318,84 @@ class RefractometerPrism(BasePrism):
 
         return instance
 
+    @classmethod
+    def from_critical_ray_path(
+        cls,
+        scene: 'Scene',
+        n_prism: float,
+        n_target: float,
+        ray_path_length: float,
+        position: Tuple[float, float] = (0.0, 0.0),
+        rotation: float = 0.0
+    ) -> 'RefractometerPrism':
+        """
+        Create a prism whose geometry is fully determined by the critical
+        angle for a target sample and the desired internal ray path length.
+
+        The ray enters perpendicular to the entrance face at its midpoint,
+        hits the measuring surface at the critical angle at its midpoint,
+        reflects via TIR, and exits perpendicular to the exit face at its
+        midpoint.
+
+        Args:
+            scene: The scene this prism belongs to.
+            n_prism: Refractive index of the prism material.
+            n_target: Refractive index of the target sample.
+            ray_path_length: Total ray path length (L) inside the prism
+                             (from entrance face midpoint to exit face midpoint
+                             via measuring surface midpoint).
+            position: Reference point coordinates.
+            rotation: Rotation angle in degrees.
+
+        Returns:
+            A new RefractometerPrism instance.
+
+        Raises:
+            ValueError: If n_prism <= n_target (TIR impossible).
+            ValueError: If theta_c <= 45 deg (geometry invalid).
+        """
+        dims = tir_utils.trapezoid_from_critical_ray_path(
+            n_target, n_prism, ray_path_length
+        )
+
+        # Estimate a reasonable n_sample_range centered on n_target
+        n_min = max(1.0, n_target - 0.10)
+        n_max = min(n_prism - 0.01, n_target + 0.10)
+
+        # Create instance via primary constructor (uses default _compute_path)
+        instance = cls(
+            scene=scene,
+            n_prism=n_prism,
+            n_sample_range=(n_min, n_max),
+            measuring_surface_length=dims['M'],
+            system_type='angular',
+            position=position,
+            rotation=rotation
+        )
+
+        # Override face angle with the one derived from critical ray path
+        instance.face_angle = dims['face_angle_deg']
+
+        # Rebuild vertex path with the correct height (the default
+        # _compute_path uses an arbitrary H = M * 0.5)
+        half_B = dims['B'] / 2
+        half_M = dims['M'] / 2
+        H = dims['h']
+        vertices = [
+            (-half_B, 0.0),   # V0: Base Left
+            (half_B, 0.0),    # V1: Base Right
+            (half_M, H),      # V2: Top Right
+            (-half_M, H),     # V3: Top Left
+        ]
+        instance.path = instance._apply_rotation_and_translation(vertices)
+        instance.auto_label_cardinal()
+
+        # Store extra attributes for inspection
+        instance.n_target = n_target
+        instance.ray_path_length = ray_path_length
+
+        return instance
+
     def _compute_path(self) -> List[Dict[str, Union[float, bool]]]:
         """
         Compute vertex path for symmetric trapezoid.

@@ -290,6 +290,77 @@ def sensor_position_for_sample(
     return center_offset + position
 
 
+def trapezoid_from_critical_ray_path(
+    n_target: float,
+    n_prism: float,
+    ray_path_length: float
+) -> dict:
+    """
+    Compute symmetric trapezoid dimensions from TIR critical angle
+    and total internal ray path length.
+
+    The prism is designed so that a ray entering perpendicular to the
+    entrance face at its midpoint hits the measuring surface at the
+    critical angle at its midpoint, reflects via TIR, and exits
+    perpendicular to the exit face at its midpoint.
+
+    Args:
+        n_target: Refractive index of the target sample.
+        n_prism: Refractive index of the prism (must be > n_target).
+        ray_path_length: Total ray path length (L) inside the prism,
+                         from entrance face midpoint to exit face midpoint
+                         via measuring surface midpoint.
+
+    Returns:
+        Dict with keys:
+            'theta_c_deg': Critical angle in degrees.
+            'h': Height of the prism.
+            'E': Length of the entrance/exit face.
+            'M': Length of the measuring surface.
+            'B': Length of the base.
+            'b': Horizontal overhang of each slanted edge.
+            'face_angle_deg': Face angle (90 - theta_c) in degrees.
+
+    Raises:
+        ValueError: If n_prism <= n_target (TIR impossible).
+        ValueError: If theta_c <= 45 deg (base length would be non-positive).
+    """
+    if n_prism <= n_target:
+        raise ValueError(
+            f"TIR impossible: n_prism ({n_prism}) must be > n_target ({n_target})"
+        )
+
+    theta_c_rad = math.asin(n_target / n_prism)
+    theta_c_deg = math.degrees(theta_c_rad)
+
+    if theta_c_deg <= 45.0:
+        raise ValueError(
+            f"Critical angle ({theta_c_deg:.2f} deg) must be > 45 deg "
+            f"for a valid trapezoid. Increase n_target/n_prism ratio."
+        )
+
+    L = ray_path_length
+    cos_tc = math.cos(theta_c_rad)
+    sin_tc = math.sin(theta_c_rad)
+
+    h = L * cos_tc
+    E = L * cos_tc / sin_tc
+    M = L / sin_tc
+    b = math.sqrt(E ** 2 - h ** 2)
+    B = M - 2 * b
+    face_angle_deg = 90.0 - theta_c_deg
+
+    return {
+        'theta_c_deg': theta_c_deg,
+        'h': h,
+        'E': E,
+        'M': M,
+        'B': B,
+        'b': b,
+        'face_angle_deg': face_angle_deg,
+    }
+
+
 def validate_refractometer_geometry(
     n_prism: float,
     n_sample_range: Tuple[float, float],

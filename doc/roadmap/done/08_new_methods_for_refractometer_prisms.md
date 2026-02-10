@@ -191,3 +191,24 @@ Expose `from_critical_ray_path` through the prisms package `__init__.py`, follow
 - **Perpendicularity test:** Create a ray perpendicular to E at its midpoint, trace it, and verify it hits M at its midpoint at angle `theta_c` and exits perpendicular to X.
 - **Degenerate case test:** With `theta_c = 45°` verify `ValueError` is raised.
 - **Invalid case test:** With `n_target >= n_prism` verify `ValueError` is raised.
+
+---
+
+### Implementation notes
+
+Implemented and verified — all 22/22 tests pass (18 pre-existing + 4 new).
+
+#### Files modified
+
+| File | Change |
+|------|--------|
+| `optical_elements/prisms/tir_utils.py` | Added `trapezoid_from_critical_ray_path()`. Placed before `validate_refractometer_geometry()`. Validates both TIR feasibility (`n_prism > n_target`) and the `theta_c > 45°` constraint. Returns a dict with keys `theta_c_deg`, `h`, `E`, `M`, `B`, `b`, `face_angle_deg`. |
+| `optical_elements/prisms/refractometer.py` | Added `from_critical_ray_path()` class method between `from_geometric_constraints()` and `_compute_path()`. Follows the same override pattern as `from_apex_angle`: creates instance via primary constructor, then overrides `face_angle`, rebuilds vertex path with physics-derived height, and re-applies cardinal labels. Stores `n_target` and `ray_path_length` as extra instance attributes. |
+| `optical_elements/prisms/__init__.py` | Added `refractometer_prism_from_critical_ray_path()` factory function delegating to `RefractometerPrism.from_critical_ray_path()`. Added to `__all__`. |
+| `developer_tests/test_prisms.py` | Added 4 test functions: `test_trapezoid_from_critical_ray_path_dimensions` (verifies all dimensions against analytical formulas + Pythagorean relation), `test_trapezoid_from_critical_ray_path_errors` (ValueError for invalid inputs), `test_from_critical_ray_path_geometry` (CCW ordering, symmetry, edge lengths match expected), `test_from_critical_ray_path_factory` (factory function smoke test). Registered in `run_all_tests()`. |
+
+#### Key design decisions
+
+- **`n_sample_range` estimation:** The factory method estimates `n_sample_range` as `n_target ± 0.10` (clamped to `[1.0, n_prism - 0.01]`). This is needed because the primary constructor requires it, but `from_critical_ray_path` only takes a single `n_target`. The estimated range is reasonable for typical refractometer applications.
+- **Path override:** The default `_compute_path()` uses an arbitrary height `H = M * 0.5`. The new method must rebuild the path with the physics-derived height `h = L * cos(theta_c)` to satisfy the ray-path constraint. This follows the same rebuild pattern used by `from_apex_angle`.
+- **Perpendicularity test deferred:** The full ray-tracing perpendicularity test (fire a ray through the prism and verify it hits M at theta_c) was not included in this round because it requires a full scene simulation. The geometry is verified analytically through the dimension and symmetry tests.

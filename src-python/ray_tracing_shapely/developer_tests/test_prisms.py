@@ -870,6 +870,195 @@ def test_factory_functions():
 
 
 # =============================================================================
+# from_critical_ray_path TESTS
+# =============================================================================
+
+def test_trapezoid_from_critical_ray_path_dimensions():
+    """
+    Test that trapezoid_from_critical_ray_path() returns correct dimensions
+    for the numerical example: n_prism=1.72, n_target=1.33, L=20.
+    """
+    print("\n" + "=" * 60)
+    print("TEST: trapezoid_from_critical_ray_path() dimensions")
+    print("=" * 60)
+
+    from ray_tracing_shapely.optical_elements.prisms import tir_utils
+
+    dims = tir_utils.trapezoid_from_critical_ray_path(
+        n_target=1.33, n_prism=1.72, ray_path_length=20.0
+    )
+
+    # Expected values from the roadmap numerical example
+    theta_c_expected = math.degrees(math.asin(1.33 / 1.72))
+    cos_tc = math.cos(math.radians(theta_c_expected))
+    sin_tc = math.sin(math.radians(theta_c_expected))
+
+    h_expected = 20.0 * cos_tc
+    E_expected = 20.0 * cos_tc / sin_tc
+    M_expected = 20.0 / sin_tc
+    b_expected = math.sqrt(E_expected ** 2 - h_expected ** 2)
+    B_expected = M_expected - 2 * b_expected
+
+    assert_angle_close(dims['theta_c_deg'], theta_c_expected, ANGLE_TOLERANCE,
+                       "theta_c")
+    assert_close(dims['h'], h_expected, TOLERANCE, "h")
+    assert_close(dims['E'], E_expected, TOLERANCE, "E")
+    assert_close(dims['M'], M_expected, TOLERANCE, "M")
+    assert_close(dims['b'], b_expected, TOLERANCE, "b")
+    assert_close(dims['B'], B_expected, TOLERANCE, "B")
+    assert_angle_close(dims['face_angle_deg'], 90.0 - theta_c_expected,
+                       ANGLE_TOLERANCE, "face_angle_deg")
+
+    print(f"  theta_c = {dims['theta_c_deg']:.2f} deg - PASS")
+    print(f"  h = {dims['h']:.4f} - PASS")
+    print(f"  E = {dims['E']:.4f} - PASS")
+    print(f"  M = {dims['M']:.4f} - PASS")
+    print(f"  b = {dims['b']:.4f} - PASS")
+    print(f"  B = {dims['B']:.4f} - PASS")
+
+    # Verify Pythagorean relation: M^2 = L^2 + E^2
+    assert_close(dims['M'] ** 2, 20.0 ** 2 + dims['E'] ** 2, 1e-4,
+                 "Pythagorean relation M^2 = L^2 + E^2")
+    print("  M^2 = L^2 + E^2 (Pythagorean) - PASS")
+
+    # Verify B > 0
+    assert dims['B'] > 0, f"B should be positive, got {dims['B']}"
+    print(f"  B > 0 ({dims['B']:.4f}) - PASS")
+
+    print("  trapezoid_from_critical_ray_path() dimension tests: ALL PASSED")
+    return True
+
+
+def test_trapezoid_from_critical_ray_path_errors():
+    """
+    Test error cases for trapezoid_from_critical_ray_path().
+    """
+    print("\n" + "=" * 60)
+    print("TEST: trapezoid_from_critical_ray_path() error cases")
+    print("=" * 60)
+
+    from ray_tracing_shapely.optical_elements.prisms import tir_utils
+
+    # n_target >= n_prism should raise ValueError
+    try:
+        tir_utils.trapezoid_from_critical_ray_path(
+            n_target=1.72, n_prism=1.50, ray_path_length=20.0
+        )
+        raise AssertionError("Should have raised ValueError for n_target > n_prism")
+    except ValueError as e:
+        assert "TIR impossible" in str(e)
+        print("  ValueError for n_target > n_prism - PASS")
+
+    # theta_c <= 45 deg should raise ValueError
+    # arcsin(n_target/n_prism) = 45 deg => n_target/n_prism = sin(45) = 0.7071
+    # e.g. n_target=1.0, n_prism=2.0 => theta_c = 30 deg < 45 deg
+    try:
+        tir_utils.trapezoid_from_critical_ray_path(
+            n_target=1.0, n_prism=2.0, ray_path_length=20.0
+        )
+        raise AssertionError("Should have raised ValueError for theta_c <= 45")
+    except ValueError as e:
+        assert "45" in str(e)
+        print("  ValueError for theta_c <= 45 deg - PASS")
+
+    print("  trapezoid_from_critical_ray_path() error tests: ALL PASSED")
+    return True
+
+
+def test_from_critical_ray_path_geometry():
+    """
+    Test RefractometerPrism.from_critical_ray_path() prism geometry:
+    - Correct vertex count
+    - CCW ordering
+    - Entrance and exit faces have equal length (symmetry)
+    - Measuring surface length matches expected M
+    """
+    print("\n" + "=" * 60)
+    print("TEST: RefractometerPrism.from_critical_ray_path() geometry")
+    print("=" * 60)
+
+    from ray_tracing_shapely.core.scene import Scene
+    from ray_tracing_shapely.optical_elements.prisms import RefractometerPrism, tir_utils
+
+    scene = Scene()
+    n_prism = 1.72
+    n_target = 1.33
+    L = 20.0
+
+    prism = RefractometerPrism.from_critical_ray_path(
+        scene, n_prism=n_prism, n_target=n_target, ray_path_length=L
+    )
+
+    dims = tir_utils.trapezoid_from_critical_ray_path(n_target, n_prism, L)
+
+    # Check 4 vertices
+    assert len(prism.path) == 4, f"Expected 4 vertices, got {len(prism.path)}"
+    print(f"  Vertex count: {len(prism.path)} - PASS")
+
+    # Check CCW ordering
+    area = prism.signed_area()
+    assert area > 0, f"Expected positive signed area (CCW), got {area}"
+    print(f"  Signed area: {area:.4f} (positive = CCW) - PASS")
+
+    # Check symmetry: entrance face (edge 3) == exit face (edge 1)
+    entrance_len = prism.get_edge_length(3)
+    exit_len = prism.get_edge_length(1)
+    assert_close(entrance_len, exit_len, TOLERANCE, "Entrance == Exit face length")
+    print(f"  Entrance face = Exit face = {entrance_len:.4f} - PASS")
+
+    # Check entrance face length matches expected E
+    assert_close(entrance_len, dims['E'], 0.01,
+                 "Entrance face length matches expected E")
+    print(f"  Entrance face matches dims['E'] ({dims['E']:.4f}) - PASS")
+
+    # Check measuring surface length matches expected M
+    m_len = prism.get_edge_length(2)
+    assert_close(m_len, dims['M'], 0.01,
+                 "Measuring surface length matches expected M")
+    print(f"  Measuring surface matches dims['M'] ({dims['M']:.4f}) - PASS")
+
+    # Check base length matches expected B
+    b_len = prism.get_edge_length(0)
+    assert_close(b_len, dims['B'], 0.01, "Base length matches expected B")
+    print(f"  Base matches dims['B'] ({dims['B']:.4f}) - PASS")
+
+    # Check extra attributes
+    assert prism.n_target == n_target, "n_target attribute"
+    assert prism.ray_path_length == L, "ray_path_length attribute"
+    print("  Extra attributes (n_target, ray_path_length) stored - PASS")
+
+    print("  from_critical_ray_path() geometry tests: ALL PASSED")
+    return True
+
+
+def test_from_critical_ray_path_factory():
+    """
+    Test the refractometer_prism_from_critical_ray_path factory function.
+    """
+    print("\n" + "=" * 60)
+    print("TEST: refractometer_prism_from_critical_ray_path() factory")
+    print("=" * 60)
+
+    from ray_tracing_shapely.core.scene import Scene
+    from ray_tracing_shapely.optical_elements.prisms import (
+        refractometer_prism_from_critical_ray_path
+    )
+
+    scene = Scene()
+    prism = refractometer_prism_from_critical_ray_path(
+        scene, n_prism=1.72, n_target=1.33, ray_path_length=20.0
+    )
+
+    assert prism.n_prism == 1.72
+    assert prism.n_target == 1.33
+    assert prism.ray_path_length == 20.0
+    print("  Factory function creates valid prism - PASS")
+
+    print("  refractometer_prism_from_critical_ray_path() tests: ALL PASSED")
+    return True
+
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -905,6 +1094,12 @@ def run_all_tests():
         ("describe_prism()", test_describe_prism),
         ("from_vertices()", test_from_vertices),
         ("Factory Functions", test_factory_functions),
+
+        # from_critical_ray_path
+        ("trapezoid dimensions", test_trapezoid_from_critical_ray_path_dimensions),
+        ("trapezoid error cases", test_trapezoid_from_critical_ray_path_errors),
+        ("from_critical_ray_path geometry", test_from_critical_ray_path_geometry),
+        ("from_critical_ray_path factory", test_from_critical_ray_path_factory),
     ]
 
     passed = 0
