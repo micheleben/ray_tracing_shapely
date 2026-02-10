@@ -591,3 +591,65 @@ Test: `test_phase2_schemas_and_lineage.py` — 12 tests covering schema
 presence/validity, lineage tool results, JSON-serializability (no Ray objects
 in output), top_n slicing, error handling for missing lineage, Fresnel
 correctness including TIR error case, and registry integration.
+
+### Phase 3 — DONE
+
+RenderResult layer: thin module between SVGRenderer and the agentic tools.
+SVG tools no longer return raw SVG strings in `_ok(renderer.to_string())`.
+Instead they save SVG to file, optionally convert to PNG via cairosvg, and
+return a JSON-serializable descriptor dict with file paths, dimensions, and a
+natural-language description.
+
+**New file: `analysis/render_result.py`**
+
+- **`save_render(svg_string, render_dir, prefix, width, height, description,
+  highlight_summary=None)`** — core function. Writes SVG to
+  `{prefix}_{counter:03d}.svg`, attempts PNG conversion, returns descriptor:
+  `{svg_path, png_path, png_available, width, height, description,
+  highlight_summary}`.
+- **`_svg_to_png(svg_string, png_path, width, height)`** — optional cairosvg
+  conversion. Catches both `ImportError` (package not installed) and `OSError`
+  (native cairo library missing on Windows). Returns `False` on failure.
+- **`reset_render_counter()`** — resets the module-level auto-incrementing
+  filename counter to 0.
+
+**Changes to `analysis/agentic_tools.py`:**
+
+- `set_context()` now creates a session-scoped temp directory
+  (`tempfile.mkdtemp(prefix='ray_sim_')`) stored in `_CONTEXT['render_dir']`
+  and resets the render counter.
+- `clear_context()` resets the render counter (temp dir is NOT deleted — the
+  LLM agent may still reference file paths from previous renders).
+- All 5 SVG tools (`render_scene_svg`, `highlight_rays_inside_glass_svg`,
+  `highlight_rays_crossing_edge_svg`, `highlight_rays_by_polarization_svg`,
+  `highlight_custom_rays_svg`) updated to call `save_render()` and return
+  `_ok(descriptor)` instead of `_ok(renderer.to_string())`.
+- Each tool composes a tool-specific description string (e.g. "Full scene: 2
+  objects, 7 ray segments." or "Highlighted 3 rays inside 'test_prism' (of 7
+  total).") and a `highlight_summary` dict (filter type, counts, glass name,
+  edge label as applicable).
+
+**Changes to `analysis/tool_registry.py`:**
+
+- `_REGISTRY` entries for SVG tools: updated signatures (`-> Dict[str, Any]`)
+  and descriptions to mention file descriptors.
+- `get_agentic_tools()` descriptions updated from "return SVG string" to
+  "save SVG/PNG to file and return a descriptor".
+
+**Changes to `analysis/__init__.py`:**
+
+- Added imports/exports: `save_render`, `reset_render_counter` from
+  `render_result`.
+
+**Updated `test_phase7_agentic_svg_tools.py`:**
+
+- Tests now verify descriptor dicts instead of raw SVG strings: check
+  `svg_path` exists and contains `<svg`, `description` is non-empty,
+  `width`/`height` are ints, `png_available` is bool, `highlight_summary`
+  has correct `filter` values per tool.
+
+Test: `test_phase3_render_result.py` — 12 tests covering save_render file
+creation, descriptor keys, counter increment/reset, highlight_summary
+pass-through, JSON serializability, PNG graceful fallback, set_context
+render_dir creation, clear_context counter reset, SVG tool descriptor
+format, and filename prefix correctness.

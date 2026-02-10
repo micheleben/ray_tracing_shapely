@@ -100,6 +100,10 @@ from .agentic_tools import (
     find_rays_by_angle_to_edge_xml,
     find_rays_by_polarization_xml,
 )
+from .render_result import (
+    save_render,
+    reset_render_counter,
+)
 from .agentic_db import (
     create_database,
 )
@@ -158,6 +162,9 @@ __all__ = [
     'rank_paths_by_energy',
     'check_energy_conservation',
     'fresnel_transmittances_tool',
+    # Phase 3: Render result layer
+    'save_render',
+    'reset_render_counter',
     'create_database',
     'find_rays_inside_glass_xml',
     'find_rays_crossing_edge_xml',

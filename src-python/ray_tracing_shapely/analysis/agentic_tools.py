@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import sqlite3
+import tempfile
 from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 
 from .ray_geometry_queries import (
@@ -99,11 +100,14 @@ def set_context(
         lineage: Optional RayLineage for lineage-based tools.
     """
     from .agentic_db import create_database
+    from .render_result import reset_render_counter
 
     _CONTEXT['scene'] = scene
     _CONTEXT['segments'] = segments
     _CONTEXT['lineage'] = lineage
     _CONTEXT['db'] = create_database(scene, segments)
+    _CONTEXT['render_dir'] = tempfile.mkdtemp(prefix='ray_sim_')
+    reset_render_counter()
 
 
 def set_context_from_result(
@@ -134,9 +138,12 @@ def get_context() -> Dict[str, Any]:
 
 def clear_context() -> None:
     """Clear the context (e.g. between simulation runs)."""
+    from .render_result import reset_render_counter
+
     db = _CONTEXT.get('db')
     if db is not None:
         db.close()
+    reset_render_counter()
     _CONTEXT.clear()
 
 
@@ -537,7 +544,7 @@ def _parse_viewbox(
 
 
 # =============================================================================
-# SVG rendering tools (Phase 7)
+# SVG rendering tools (Phase 7, updated in Phase 3 for RenderResult)
 # =============================================================================
 
 def render_scene_svg(
@@ -546,10 +553,11 @@ def render_scene_svg(
     viewbox: str = 'auto',
 ) -> Dict[str, Any]:
     """
-    Render the full scene and all rays as an SVG string.
+    Render the full scene and all rays, save to file, return descriptor.
 
     This is the baseline rendering — no highlights, just the scene as-is.
-    Useful as a "show me the current state" tool.
+    Returns a file descriptor with svg_path (and png_path if cairosvg is
+    installed) plus a text description.
 
     Args:
         width: SVG width in pixels.
@@ -558,16 +566,31 @@ def render_scene_svg(
             from scene bounds.
 
     Returns:
-        Structured dict with status and SVG data, or error message.
+        Structured dict with status and render descriptor, or error message.
     """
     try:
         from ..core.svg_renderer import SVGRenderer
+        from .render_result import save_render
 
         scene, segments = _require_context()
         vb = _parse_viewbox(viewbox, scene)
         renderer = SVGRenderer(width=width, height=height, viewbox=vb)
         renderer.draw_scene(scene, segments)
-        return _ok(renderer.to_string())
+
+        render_dir = _CONTEXT.get('render_dir', tempfile.mkdtemp(prefix='ray_sim_'))
+        description = (
+            f"Full scene: {len(scene.objs)} objects, "
+            f"{len(segments)} ray segments."
+        )
+        descriptor = save_render(
+            svg_string=renderer.to_string(),
+            render_dir=render_dir,
+            prefix='scene',
+            width=width,
+            height=height,
+            description=description,
+        )
+        return _ok(descriptor)
     except (ValueError, KeyError) as e:
         return _error(str(e))
     except RuntimeError as e:
@@ -584,7 +607,8 @@ def highlight_rays_inside_glass_svg(
     """
     Render the scene with rays inside a glass object highlighted.
 
-    Combines find_rays_inside_glass() with highlight rendering.
+    Combines find_rays_inside_glass() with highlight rendering. Returns a
+    file descriptor with paths and a text description.
 
     Args:
         glass_name: Name of the glass object.
@@ -594,10 +618,11 @@ def highlight_rays_inside_glass_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        Structured dict with status and SVG data, or error message.
+        Structured dict with status and render descriptor, or error message.
     """
     try:
         from ..core.svg_renderer import SVGRenderer
+        from .render_result import save_render
 
         scene, segments = _require_context()
         glass = get_object_by_name(scene, glass_name)
@@ -612,7 +637,27 @@ def highlight_rays_inside_glass_svg(
             highlight_glass_names=[glass_name],
             highlight_color=highlight_color,
         )
-        return _ok(renderer.to_string())
+
+        render_dir = _CONTEXT.get('render_dir', tempfile.mkdtemp(prefix='ray_sim_'))
+        description = (
+            f"Highlighted {len(ray_uuids)} rays inside "
+            f"'{glass_name}' (of {len(segments)} total)."
+        )
+        descriptor = save_render(
+            svg_string=renderer.to_string(),
+            render_dir=render_dir,
+            prefix='highlight_inside',
+            width=width,
+            height=height,
+            description=description,
+            highlight_summary={
+                'highlighted_rays': len(ray_uuids),
+                'total_rays': len(segments),
+                'filter': 'inside_glass',
+                'glass_name': glass_name,
+            },
+        )
+        return _ok(descriptor)
     except (ValueError, KeyError) as e:
         return _error(str(e))
     except RuntimeError as e:
@@ -630,8 +675,8 @@ def highlight_rays_crossing_edge_svg(
     """
     Render the scene with rays crossing a specific edge highlighted.
 
-    Combines find_rays_crossing_edge() with highlight rendering.
-    Also highlights the edge itself.
+    Combines find_rays_crossing_edge() with highlight rendering. Also
+    highlights the edge itself. Returns a file descriptor.
 
     Args:
         glass_name: Name of the glass object.
@@ -642,10 +687,11 @@ def highlight_rays_crossing_edge_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        Structured dict with status and SVG data, or error message.
+        Structured dict with status and render descriptor, or error message.
     """
     try:
         from ..core.svg_renderer import SVGRenderer
+        from .render_result import save_render
 
         scene, segments = _require_context()
         glass = get_object_by_name(scene, glass_name)
@@ -660,7 +706,28 @@ def highlight_rays_crossing_edge_svg(
             highlight_edge_specs=[(glass_name, edge_label)],
             highlight_color=highlight_color,
         )
-        return _ok(renderer.to_string())
+
+        render_dir = _CONTEXT.get('render_dir', tempfile.mkdtemp(prefix='ray_sim_'))
+        description = (
+            f"Highlighted {len(ray_uuids)} rays crossing edge "
+            f"'{edge_label}' of '{glass_name}'."
+        )
+        descriptor = save_render(
+            svg_string=renderer.to_string(),
+            render_dir=render_dir,
+            prefix='highlight_edge',
+            width=width,
+            height=height,
+            description=description,
+            highlight_summary={
+                'highlighted_rays': len(ray_uuids),
+                'total_rays': len(segments),
+                'filter': 'crossing_edge',
+                'glass_name': glass_name,
+                'edge_label': edge_label,
+            },
+        )
+        return _ok(descriptor)
     except (ValueError, KeyError) as e:
         return _error(str(e))
     except RuntimeError as e:
@@ -678,6 +745,8 @@ def highlight_rays_by_polarization_svg(
     """
     Render the scene with rays filtered by degree of polarization highlighted.
 
+    Returns a file descriptor with paths and a text description.
+
     Args:
         min_dop: Minimum degree of polarization (0-1).
         max_dop: Maximum degree of polarization (0-1).
@@ -687,10 +756,11 @@ def highlight_rays_by_polarization_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        Structured dict with status and SVG data, or error message.
+        Structured dict with status and render descriptor, or error message.
     """
     try:
         from ..core.svg_renderer import SVGRenderer
+        from .render_result import save_render
 
         scene, segments = _require_context()
         rays = find_rays_by_polarization(segments, min_dop=min_dop, max_dop=max_dop)
@@ -703,7 +773,28 @@ def highlight_rays_by_polarization_svg(
             highlight_ray_uuids=ray_uuids,
             highlight_color=highlight_color,
         )
-        return _ok(renderer.to_string())
+
+        render_dir = _CONTEXT.get('render_dir', tempfile.mkdtemp(prefix='ray_sim_'))
+        description = (
+            f"Highlighted {len(ray_uuids)} rays with DOP in "
+            f"[{min_dop}, {max_dop}] (of {len(segments)} total)."
+        )
+        descriptor = save_render(
+            svg_string=renderer.to_string(),
+            render_dir=render_dir,
+            prefix='highlight_polar',
+            width=width,
+            height=height,
+            description=description,
+            highlight_summary={
+                'highlighted_rays': len(ray_uuids),
+                'total_rays': len(segments),
+                'filter': 'polarization',
+                'min_dop': min_dop,
+                'max_dop': max_dop,
+            },
+        )
+        return _ok(descriptor)
     except (ValueError, KeyError) as e:
         return _error(str(e))
     except RuntimeError as e:
@@ -721,7 +812,8 @@ def highlight_custom_rays_svg(
     Render the scene with a specific set of rays highlighted by uuid.
 
     This is the escape hatch: the agent can compose arbitrary queries,
-    collect uuids, and pass them here for visualization.
+    collect uuids, and pass them here for visualization. Returns a file
+    descriptor.
 
     Args:
         ray_uuids_csv: Comma-separated ray uuids to highlight.
@@ -731,10 +823,11 @@ def highlight_custom_rays_svg(
         viewbox: Viewbox as "min_x,min_y,width,height" or "auto".
 
     Returns:
-        Structured dict with status and SVG data, or error message.
+        Structured dict with status and render descriptor, or error message.
     """
     try:
         from ..core.svg_renderer import SVGRenderer
+        from .render_result import save_render
 
         scene, segments = _require_context()
         ray_uuids = set(u.strip() for u in ray_uuids_csv.split(',') if u.strip())
@@ -746,7 +839,25 @@ def highlight_custom_rays_svg(
             highlight_ray_uuids=ray_uuids,
             highlight_color=highlight_color,
         )
-        return _ok(renderer.to_string())
+
+        render_dir = _CONTEXT.get('render_dir', tempfile.mkdtemp(prefix='ray_sim_'))
+        description = (
+            f"Highlighted {len(ray_uuids)} custom rays by uuid."
+        )
+        descriptor = save_render(
+            svg_string=renderer.to_string(),
+            render_dir=render_dir,
+            prefix='highlight_custom',
+            width=width,
+            height=height,
+            description=description,
+            highlight_summary={
+                'highlighted_rays': len(ray_uuids),
+                'total_rays': len(segments),
+                'filter': 'custom',
+            },
+        )
+        return _ok(descriptor)
     except (ValueError, KeyError) as e:
         return _error(str(e))
     except RuntimeError as e:

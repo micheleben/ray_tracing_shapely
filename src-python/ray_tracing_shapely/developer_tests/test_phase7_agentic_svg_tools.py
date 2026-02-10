@@ -5,11 +5,12 @@ PHASE 7: Agentic SVG Tools - Feature Verification Test
 
 This script tests the Phase 7 agentic SVG rendering tools added to
 agentic_tools.py. These tools compose ray-query functions with SVGRenderer
-to produce SVG strings in a single call, designed for LLM tool-use APIs.
+to save SVG/PNG files and return JSON-serializable descriptors with file
+paths, dimensions, and text descriptions.
 
 TOOLS TESTED
 ------------
-1. render_scene_svg          -- baseline full-scene SVG rendering
+1. render_scene_svg          -- baseline full-scene rendering
 2. highlight_rays_inside_glass_svg  -- highlight rays inside a named glass
 3. highlight_rays_crossing_edge_svg -- highlight rays crossing a named edge
 4. highlight_rays_by_polarization_svg -- highlight rays by polarization
@@ -35,6 +36,7 @@ USAGE
 
 import sys
 import os
+from pathlib import Path
 
 # Ensure the package is importable when running directly
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -59,6 +61,26 @@ from ray_tracing_shapely.analysis.tool_registry import (
     list_available_tools,
     generate_tool_note_for_solveit_notebook,
 )
+
+
+def _assert_descriptor(data: dict, label: str) -> None:
+    """Shared assertions for render descriptor dicts."""
+    assert isinstance(data, dict), f"{label}: data should be dict, got {type(data)}"
+    assert 'svg_path' in data, f"{label}: missing svg_path"
+    assert 'description' in data, f"{label}: missing description"
+    assert 'width' in data, f"{label}: missing width"
+    assert 'height' in data, f"{label}: missing height"
+    assert 'png_available' in data, f"{label}: missing png_available"
+    assert isinstance(data['description'], str), f"{label}: description not str"
+    assert len(data['description']) > 0, f"{label}: description empty"
+    assert isinstance(data['width'], int), f"{label}: width not int"
+    assert isinstance(data['height'], int), f"{label}: height not int"
+    assert isinstance(data['png_available'], bool), f"{label}: png_available not bool"
+    # Verify SVG file exists and contains <svg
+    svg_path = Path(data['svg_path'])
+    assert svg_path.exists(), f"{label}: svg file not found: {svg_path}"
+    svg_content = svg_path.read_text(encoding='utf-8')
+    assert '<svg' in svg_content, f"{label}: SVG file missing <svg> tag"
 
 
 def build_test_scene():
@@ -123,15 +145,18 @@ def test_compute_scene_bounds(scene):
 
 
 def test_render_scene_svg(segments):
-    """Test 4: render_scene_svg produces valid SVG."""
+    """Test 4: render_scene_svg returns a valid descriptor."""
     print("\nTest 4: render_scene_svg")
     result = render_scene_svg()
     assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
-    svg = result['data']
-    assert '<svg' in svg and '</svg>' in svg, "Missing <svg> tags"
-    assert 'layer-objects' in svg, "Missing layer-objects"
-    assert 'layer-rays' in svg, "Missing layer-rays"
-    print(f"  PASS: {len(svg)} chars, contains required layers")
+    data = result['data']
+    _assert_descriptor(data, 'render_scene_svg')
+    # Check SVG file has expected layers
+    svg_content = Path(data['svg_path']).read_text(encoding='utf-8')
+    assert 'layer-objects' in svg_content, "Missing layer-objects"
+    assert 'layer-rays' in svg_content, "Missing layer-rays"
+    print(f"  PASS: descriptor with svg_path={data['svg_path']}, "
+          f"description='{data['description'][:50]}...'")
     return True
 
 
@@ -140,9 +165,11 @@ def test_render_scene_svg_explicit_viewbox():
     print("\nTest 5: render_scene_svg (explicit viewbox)")
     result = render_scene_svg(width=600, height=400, viewbox='100,30,200,100')
     assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
-    svg = result['data']
-    assert '<svg' in svg, "Missing <svg> tag"
-    print(f"  PASS: {len(svg)} chars")
+    data = result['data']
+    _assert_descriptor(data, 'render_scene_svg_viewbox')
+    assert data['width'] == 600, f"Expected width=600, got {data['width']}"
+    assert data['height'] == 400, f"Expected height=400, got {data['height']}"
+    print(f"  PASS: descriptor width={data['width']}, height={data['height']}")
     return True
 
 
@@ -151,9 +178,13 @@ def test_highlight_rays_inside_glass_svg():
     print("\nTest 6: highlight_rays_inside_glass_svg")
     result = highlight_rays_inside_glass_svg('test_prism')
     assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
-    svg = result['data']
-    assert '<svg' in svg, "Missing <svg> tag"
-    print(f"  PASS: {len(svg)} chars")
+    data = result['data']
+    _assert_descriptor(data, 'highlight_inside')
+    assert data['highlight_summary'] is not None, "Missing highlight_summary"
+    assert data['highlight_summary']['filter'] == 'inside_glass', (
+        f"Expected filter='inside_glass', got {data['highlight_summary']['filter']}"
+    )
+    print(f"  PASS: {data['highlight_summary']['highlighted_rays']} rays highlighted")
     return True
 
 
@@ -167,9 +198,14 @@ def test_highlight_rays_crossing_edge_svg(prism):
 
     result = highlight_rays_crossing_edge_svg('test_prism', labels[0])
     assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
-    svg = result['data']
-    assert '<svg' in svg, "Missing <svg> tag"
-    print(f"  PASS: highlighted edge '{labels[0]}', {len(svg)} chars")
+    data = result['data']
+    _assert_descriptor(data, 'highlight_edge')
+    assert data['highlight_summary'] is not None, "Missing highlight_summary"
+    assert data['highlight_summary']['filter'] == 'crossing_edge', (
+        f"Expected filter='crossing_edge', got {data['highlight_summary']['filter']}"
+    )
+    print(f"  PASS: highlighted edge '{labels[0]}', "
+          f"{data['highlight_summary']['highlighted_rays']} rays")
     return True
 
 
@@ -178,9 +214,13 @@ def test_highlight_rays_by_polarization_svg():
     print("\nTest 8: highlight_rays_by_polarization_svg")
     result = highlight_rays_by_polarization_svg(min_dop=0.0, max_dop=1.0)
     assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
-    svg = result['data']
-    assert '<svg' in svg, "Missing <svg> tag"
-    print(f"  PASS: {len(svg)} chars")
+    data = result['data']
+    _assert_descriptor(data, 'highlight_polar')
+    assert data['highlight_summary'] is not None, "Missing highlight_summary"
+    assert data['highlight_summary']['filter'] == 'polarization', (
+        f"Expected filter='polarization', got {data['highlight_summary']['filter']}"
+    )
+    print(f"  PASS: {data['highlight_summary']['highlighted_rays']} rays highlighted")
     return True
 
 
@@ -194,9 +234,14 @@ def test_highlight_custom_rays_svg(segments):
     csv_str = ','.join(uuids)
     result = highlight_custom_rays_svg(csv_str, highlight_color='red')
     assert result['status'] == 'ok', f"Expected status 'ok', got {result['status']}"
-    svg = result['data']
-    assert '<svg' in svg, "Missing <svg> tag"
-    print(f"  PASS: highlighted {len(uuids)} rays, {len(svg)} chars")
+    data = result['data']
+    _assert_descriptor(data, 'highlight_custom')
+    assert data['highlight_summary'] is not None, "Missing highlight_summary"
+    assert data['highlight_summary']['filter'] == 'custom', (
+        f"Expected filter='custom', got {data['highlight_summary']['filter']}"
+    )
+    print(f"  PASS: highlighted {len(uuids)} rays, "
+          f"svg_path={data['svg_path']}")
     return True
 
 

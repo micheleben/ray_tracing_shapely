@@ -386,36 +386,36 @@ _REGISTRY: List[Dict[str, str]] = [
         'module': 'analysis.agentic_tools',
         'name': 'render_scene_svg',
         'kind': 'function',
-        'signature': '(width=800, height=600, viewbox="auto") -> str',
-        'description': 'Render the full scene and rays as an SVG string',
+        'signature': '(width=800, height=600, viewbox="auto") -> Dict[str, Any]',
+        'description': 'Render full scene, save to file, return descriptor with svg_path and description',
     },
     {
         'module': 'analysis.agentic_tools',
         'name': 'highlight_rays_inside_glass_svg',
         'kind': 'function',
-        'signature': '(glass_name, highlight_color="yellow", width=800, height=600, viewbox="auto") -> str',
-        'description': 'Render scene with rays inside a glass highlighted, return SVG string',
+        'signature': '(glass_name, highlight_color="yellow", width=800, height=600, viewbox="auto") -> Dict[str, Any]',
+        'description': 'Highlight rays inside a glass, save to file, return descriptor',
     },
     {
         'module': 'analysis.agentic_tools',
         'name': 'highlight_rays_crossing_edge_svg',
         'kind': 'function',
-        'signature': '(glass_name, edge_label, highlight_color="yellow", width=800, height=600, viewbox="auto") -> str',
-        'description': 'Render scene with rays crossing an edge highlighted, return SVG string',
+        'signature': '(glass_name, edge_label, highlight_color="yellow", width=800, height=600, viewbox="auto") -> Dict[str, Any]',
+        'description': 'Highlight rays crossing an edge, save to file, return descriptor',
     },
     {
         'module': 'analysis.agentic_tools',
         'name': 'highlight_rays_by_polarization_svg',
         'kind': 'function',
-        'signature': '(min_dop=0, max_dop=1, highlight_color="magenta", width=800, height=600, viewbox="auto") -> str',
-        'description': 'Render scene with rays filtered by polarization highlighted, return SVG string',
+        'signature': '(min_dop=0, max_dop=1, highlight_color="magenta", width=800, height=600, viewbox="auto") -> Dict[str, Any]',
+        'description': 'Highlight rays by polarization, save to file, return descriptor',
     },
     {
         'module': 'analysis.agentic_tools',
         'name': 'highlight_custom_rays_svg',
         'kind': 'function',
-        'signature': '(ray_uuids_csv, highlight_color="yellow", width=800, height=600, viewbox="auto") -> str',
-        'description': 'Render scene with specific rays (by uuid) highlighted, return SVG string',
+        'signature': '(ray_uuids_csv, highlight_color="yellow", width=800, height=600, viewbox="auto") -> Dict[str, Any]',
+        'description': 'Highlight custom rays by uuid, save to file, return descriptor',
     },
     # -------------------------------------------------------------------------
     # analysis.tool_registry -- Tool discovery
@@ -725,7 +725,7 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         {
             'name': 'render_scene_svg',
             'function': render_scene_svg,
-            'description': 'Render the full scene and rays as an SVG string.',
+            'description': 'Render the full scene and rays; save SVG/PNG to file and return a descriptor with file paths and description.',
             'input_schema': {
                 'type': 'object',
                 'properties': {**_SVG_COMMON_PROPS},
@@ -735,7 +735,7 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         {
             'name': 'highlight_rays_inside_glass_svg',
             'function': highlight_rays_inside_glass_svg,
-            'description': 'Render scene with rays inside a glass highlighted, return SVG string.',
+            'description': 'Render scene with rays inside a glass highlighted; save SVG/PNG to file and return a descriptor.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -756,7 +756,7 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         {
             'name': 'highlight_rays_crossing_edge_svg',
             'function': highlight_rays_crossing_edge_svg,
-            'description': 'Render scene with rays crossing an edge highlighted, return SVG string.',
+            'description': 'Render scene with rays crossing an edge highlighted; save SVG/PNG to file and return a descriptor.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -781,7 +781,7 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         {
             'name': 'highlight_rays_by_polarization_svg',
             'function': highlight_rays_by_polarization_svg,
-            'description': 'Render scene with rays filtered by polarization highlighted, return SVG string.',
+            'description': 'Render scene with rays filtered by polarization highlighted; save SVG/PNG to file and return a descriptor.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -808,7 +808,7 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         {
             'name': 'highlight_custom_rays_svg',
             'function': highlight_custom_rays_svg,
-            'description': 'Render scene with specific rays (by uuid) highlighted, return SVG string.',
+            'description': 'Render scene with specific rays (by uuid) highlighted; save SVG/PNG to file and return a descriptor.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
