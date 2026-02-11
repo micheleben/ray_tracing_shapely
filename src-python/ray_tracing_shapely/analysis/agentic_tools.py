@@ -37,10 +37,11 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
-from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 
 from .ray_geometry_queries import (
     get_object_by_name,
+    get_objects_by_type,
     find_rays_inside_glass,
     find_rays_crossing_edge,
     find_rays_by_angle_to_edge,
@@ -357,6 +358,79 @@ def fresnel_transmittances_tool(
         result = _fresnel(n1, n2, theta_i_deg)
         return _ok(result)
     except ValueError as e:
+        return _error(str(e))
+
+
+def tir_analysis_tool(
+    glass_name_high_n: str,
+    glass_name_low_n: str,
+    theta_i_deg: Optional[float] = None,
+    delta_angle_deg: float = 1.0,
+) -> Dict[str, Any]:
+    """
+    Compute TIR critical angle, Brewster angle, Fresnel reflectances,
+    and phase shifts between two named glasses.
+
+    The first glass must have the higher refractive index.  Optionally
+    provide an angle of incidence; if omitted, defaults to
+    ``critical_angle + delta_angle_deg``.
+
+    Requires context: call set_context() or set_context_from_result()
+    before using this tool.
+
+    Args:
+        glass_name_high_n: Name of the glass with the higher refractive
+            index.
+        glass_name_low_n: Name of the glass with the lower refractive
+            index.
+        theta_i_deg: Angle of incidence in degrees (from normal).
+            If omitted, defaults to critical_angle + delta_angle_deg.
+        delta_angle_deg: Proximity threshold in degrees for near-TIR and
+            near-Brewster flags.  Also used as the offset from TIR when
+            no angle is provided.  Default 1.0.
+
+    Returns:
+        Structured dict with status and TIR analysis data, or error
+        message.
+    """
+    try:
+        from .fresnel_utils import tir_analysis as _tir_analysis
+
+        scene, _segments = _require_context()
+
+        glass_high = get_object_by_name(scene, glass_name_high_n)
+        glass_low = get_object_by_name(scene, glass_name_low_n)
+
+        n1 = getattr(glass_high, 'refIndex', None)
+        n2 = getattr(glass_low, 'refIndex', None)
+        if n1 is None or n2 is None:
+            missing = []
+            if n1 is None:
+                missing.append(f"'{glass_name_high_n}'")
+            if n2 is None:
+                missing.append(f"'{glass_name_low_n}'")
+            return _error(
+                f"Object(s) {', '.join(missing)} have no refIndex attribute. "
+                f"Are they Glass objects?"
+            )
+
+        if n1 <= n2:
+            return _error(
+                f"First glass must have higher refractive index. "
+                f"'{glass_name_high_n}' has n={n1} but "
+                f"'{glass_name_low_n}' has n={n2}. "
+                f"Swap the arguments: tir_analysis("
+                f"glass_name_high_n='{glass_name_low_n}', "
+                f"glass_name_low_n='{glass_name_high_n}', ...)"
+            )
+
+        result = _tir_analysis(n1, n2, theta_i_deg, delta_angle_deg)
+        result['glass_high_n'] = glass_name_high_n
+        result['glass_low_n'] = glass_name_low_n
+        return _ok(result)
+    except (ValueError, KeyError) as e:
+        return _error(str(e))
+    except RuntimeError as e:
         return _error(str(e))
 
 

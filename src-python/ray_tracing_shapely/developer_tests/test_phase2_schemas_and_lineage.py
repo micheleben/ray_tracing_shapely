@@ -262,10 +262,10 @@ def test_tool_registry_new_tools():
 
 
 def test_tool_registry_count():
-    """Test 12: Total tool count is 14."""
+    """Test 12: Total tool count is 15."""
     print("\nTest 12: Tool count")
     tools = get_agentic_tools()
-    expected = 14
+    expected = 15
     assert len(tools) == expected, (
         f"Expected {expected} tools, got {len(tools)}: "
         f"{[t['name'] for t in tools]}"

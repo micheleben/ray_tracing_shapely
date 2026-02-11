@@ -290,6 +290,13 @@ _REGISTRY: List[Dict[str, str]] = [
         'signature': '(n1, n2) -> float',
         'description': "Compute Brewster's angle (where R_p = 0)",
     },
+    {
+        'module': 'analysis.fresnel_utils',
+        'name': 'tir_analysis',
+        'kind': 'function',
+        'signature': '(n1, n2, theta_i_deg=None, delta_angle_deg=1.0) -> Dict[str, Any]',
+        'description': 'Compute TIR angle, phase shifts, and Fresnel quantities for two media',
+    },
     # -------------------------------------------------------------------------
     # analysis.agentic_db -- In-memory SQLite database for agentic queries
     # -------------------------------------------------------------------------
@@ -352,6 +359,13 @@ _REGISTRY: List[Dict[str, str]] = [
         'kind': 'function',
         'signature': '(n1, n2, theta_i_deg) -> Dict[str, Any]',
         'description': 'Compute Fresnel transmittances/reflectances at an interface',
+    },
+    {
+        'module': 'analysis.agentic_tools',
+        'name': 'tir_analysis_tool',
+        'kind': 'function',
+        'signature': '(glass_name_high_n, glass_name_low_n, theta_i_deg=None, delta_angle_deg=1.0) -> Dict[str, Any]',
+        'description': 'Compute TIR angle, phase shifts, and Fresnel quantities between two named glasses',
     },
     # Legacy XML tools (superseded by query_rays, kept for backward compat)
     {
@@ -520,6 +534,7 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         rank_paths_by_energy,
         check_energy_conservation,
         fresnel_transmittances_tool,
+        tir_analysis_tool,
         find_rays_inside_glass_xml,
         find_rays_crossing_edge_xml,
         find_rays_by_angle_to_edge_xml,
@@ -634,6 +649,46 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
                     },
                 },
                 'required': ['n1', 'n2', 'theta_i_deg'],
+            },
+        },
+        # --- TIR analysis tool ---
+        {
+            'name': 'tir_analysis',
+            'function': tir_analysis_tool,
+            'description': (
+                'Compute TIR critical angle, Brewster angle, Fresnel reflectances, '
+                'and phase shifts between two named glasses. The first glass must have '
+                'the higher refractive index. Optionally provide an angle of incidence; '
+                'if omitted, defaults to critical_angle + delta_angle_deg.'
+            ),
+            'input_schema': {
+                'type': 'object',
+                'properties': {
+                    'glass_name_high_n': {
+                        'type': 'string',
+                        'description': 'Name of the glass with the higher refractive index.',
+                    },
+                    'glass_name_low_n': {
+                        'type': 'string',
+                        'description': 'Name of the glass with the lower refractive index.',
+                    },
+                    'theta_i_deg': {
+                        'type': 'number',
+                        'description': (
+                            'Angle of incidence in degrees (from normal). '
+                            'If omitted, defaults to critical_angle + delta_angle_deg.'
+                        ),
+                    },
+                    'delta_angle_deg': {
+                        'type': 'number',
+                        'description': (
+                            'Proximity threshold in degrees for near-TIR and near-Brewster flags. '
+                            'Also used as the offset from TIR when no angle is provided.'
+                        ),
+                        'default': 1.0,
+                    },
+                },
+                'required': ['glass_name_high_n', 'glass_name_low_n'],
             },
         },
         # --- Legacy XML tools (superseded by query_rays, kept for backward compat) ---

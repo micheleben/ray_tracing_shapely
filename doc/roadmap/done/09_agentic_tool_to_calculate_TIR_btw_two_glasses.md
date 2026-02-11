@@ -140,7 +140,7 @@ The agentic tool takes glass names (strings), but the physics functions work wit
 
 1. The agentic wrapper calls `_require_context()` to get the `scene` object.
 2. It calls `get_object_by_name(scene, glass_name)` (from `ray_geometry_queries`) to get the glass object.
-3. It reads `glass.n` to get the refractive index.
+3. It reads `glass.refIndex` to get the refractive index.
 
 This means:
 - The **pure-physics function** in `fresnel_utils.py` takes `n1: float, n2: float` (no scene dependency).
@@ -190,7 +190,7 @@ def tir_analysis_tool(
 This wrapper:
 - Calls `_require_context()` to get the scene.
 - Resolves both glass names via `get_object_by_name(scene, name)`.
-- Reads `glass.n` from each.
+- Reads `glass.refIndex` from each.
 - Validates that the first glass has the higher index; if not, returns a structured error with the actual n values so the agent can self-correct.
 - Delegates to `tir_analysis(n1, n2, theta_i_deg, delta_angle_deg)` from `fresnel_utils`.
 - Wraps the result in `_ok(data)` / `_error(message)`.
@@ -416,3 +416,46 @@ Add to `get_agentic_tools()` return list:
 | `delta_s_deg` | `float` | always | s-pol phase shift on reflection (degrees) |
 | `delta_p_deg` | `float` | always | p-pol phase shift on reflection (degrees) |
 | `delta_relative_deg` | `float` | always | relative phase shift delta_p - delta_s (degrees) |
+
+## Implementation notes
+
+**Status: IMPLEMENTED** — all touch points completed and verified.
+
+### Files changed
+
+| File | Change |
+|:-----|:-------|
+| `analysis/fresnel_utils.py` | Added `tir_analysis()` (~100 lines). Import of `Any`, `Optional` added. |
+| `analysis/agentic_tools.py` | Added `tir_analysis_tool()` wrapper. Added imports for `get_objects_by_type` and `Optional`. |
+| `analysis/tool_registry.py` | Two `_REGISTRY` entries (fresnel_utils + agentic_tools). One `get_agentic_tools()` entry with full `input_schema`. Import of `tir_analysis_tool`. |
+| `analysis/__init__.py` | Exported `tir_analysis` (from fresnel_utils) and `tir_analysis_tool` (from agentic_tools). Added to `__all__`. |
+| `developer_tests/test_phase2_schemas_and_lineage.py` | Updated expected tool count from 14 to 15. |
+
+### Files created
+
+| File | Description |
+|:-----|:------------|
+| `developer_tests/test_tir_analysis.py` | 15 tests: 9 pure-physics + 6 agentic wrapper. |
+
+### Test results
+
+- `test_tir_analysis.py`: **15/15 passed**
+- `test_phase2_schemas_and_lineage.py`: **12/12 passed** (including updated tool count)
+
+### Deviations from the roadmap
+
+1. **`glass.refIndex` not `glass.n`** — the Glass object stores the refractive index as the `refIndex` attribute (inherited from `serializable_defaults` in `BaseSceneObj`). The roadmap originally said `glass.n`. Corrected in the roadmap during implementation.
+
+2. **Defensive `refIndex` check** — the agentic wrapper uses `getattr(glass, 'refIndex', None)` instead of direct attribute access. If a non-Glass scene object is passed by name, it returns a structured error ("have no refIndex attribute. Are they Glass objects?") rather than crashing with `AttributeError`. This was not in the original roadmap but follows the CONTRIBUTING.md guideline of discoverable error messages.
+
+3. **`glass_high_n` / `glass_low_n` added by the wrapper, not the physics function** — the pure-physics `tir_analysis()` returns only `n1` and `n2` (floats). The agentic wrapper injects the `glass_high_n` and `glass_low_n` string fields into the result dict before wrapping with `_ok()`. This keeps the physics function scene-free as intended.
+
+4. **Sub-critical phase shifts as 0.0 or 180.0** — the roadmap described these qualitatively. The implementation computes the amplitude reflection coefficients `r_s` and `r_p` and maps their sign to `0.0` or `180.0` degrees. This gives the agent a uniform `delta_s_deg` / `delta_p_deg` / `delta_relative_deg` interface across both regimes.
+
+### Physics verification highlights
+
+- Brewster phase flip confirmed: `delta_p_deg` = 180 below Brewster, 0 above (for n1 > n2 internal reflection).
+- `delta_s_deg` = 0 everywhere below TIR (for n1 > n2), consistent with theory.
+- Phase shifts approach 0 continuously just above TIR (test measured 2.02 deg at TIR + 0.01 deg).
+- Phase shifts increase monotonically above TIR (153 deg at 80 deg for n=1.5/1.0).
+- Energy conservation T + R = 1 verified for refraction regime.

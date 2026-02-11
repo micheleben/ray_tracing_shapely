@@ -76,6 +76,7 @@ from .fresnel_utils import (
     fresnel_transmittances,
     critical_angle,
     brewster_angle,
+    tir_analysis,
 )
 from .tool_registry import (
     list_available_tools,
@@ -94,6 +95,7 @@ from .agentic_tools import (
     rank_paths_by_energy,
     check_energy_conservation,
     fresnel_transmittances_tool,
+    tir_analysis_tool,
     # Legacy XML tools (backward compat)
     find_rays_inside_glass_xml,
     find_rays_crossing_edge_xml,
@@ -154,6 +156,7 @@ __all__ = [
     'fresnel_transmittances',
     'critical_angle',
     'brewster_angle',
+    'tir_analysis',
     # Tool discovery (Python-specific)
     'list_available_tools',
     'get_agentic_tools',
@@ -168,6 +171,7 @@ __all__ = [
     'rank_paths_by_energy',
     'check_energy_conservation',
     'fresnel_transmittances_tool',
+    'tir_analysis_tool',
     # Phase 3: Render result layer
     'save_render',
     'reset_render_counter',
