@@ -653,7 +653,7 @@ def get_agentic_tools() -> List[Dict[str, Any]]:
         },
         # --- TIR analysis tool ---
         {
-            'name': 'tir_analysis',
+            'name': 'tir_analysis_tool',
             'function': tir_analysis_tool,
             'description': (
                 'Compute TIR critical angle, Brewster angle, Fresnel reflectances, '
